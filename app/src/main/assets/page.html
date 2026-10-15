@@ -1,0 +1,355 @@
+<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>FPV Car</title><link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#16011e">
+<meta name=mobile-web-app-capable content=yes><link rel=icon href=/icon-192.png><style>
+@font-face{font-family:"Car Display";src:url(/font-400.ttf) format("truetype");font-weight:400;font-display:swap}@font-face{font-family:"Car Display";src:url(/font-700.ttf) format("truetype");font-weight:700;font-display:swap}
+:root{--bg:#16011e;--bg1:#1d0128;--bg2:#280137;--bg3:#3a0a47;--line:#52125c;--soft:#3a0a47;--text:#ece6ee;--dim:#c0c0c0;--faint:#9a88a1;--knob:#3a0a47;--acc:#bf40bf;--acc-ink:#16011e;--gold:#ffd700;--red:#ff7b7b;--glass:rgba(22,1,30,.62);--display:"Car Display",system-ui,-apple-system,sans-serif;--sz:1;--op:1}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--dim);font:13px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;touch-action:none;overflow:hidden;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+#view{position:fixed;inset:0;overflow:hidden;background:radial-gradient(ellipse at center,#280137 0%,var(--bg) 72%)}
+#view canvas,#view img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;transform-origin:center;transition:transform .2s}
+#view.fill canvas,#view.fill img{object-fit:cover}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .35s}
+#flash.on{opacity:.55;transition:none}
+.ui{opacity:var(--op);transition:opacity .2s}
+.ib{width:calc(40px*var(--sz));height:calc(40px*var(--sz));display:grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--glass);padding:0}
+.ib svg{width:55%;height:55%;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ib.on{background:var(--acc);border-color:var(--acc)}.ib.on svg{stroke:var(--acc-ink)}
+#orbL{position:fixed;top:12px;left:16px}#ctime{position:fixed;top:calc(12px + 20px*var(--sz) - 10px);left:calc(16px + 40px*var(--sz) + 10px);display:none;align-items:center;gap:6px;font:600 13px var(--display);color:var(--text);font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000;transition:color .4s}#ctime.on{display:flex}#ctime i{width:7px;height:7px;border-radius:50%;background:#68e59c;box-shadow:0 0 6px #68e59c}#ctime.late{color:var(--gold)}#ctime.late i{background:var(--gold);box-shadow:0 0 6px var(--gold);animation:pulse 1.2s ease-in-out infinite}.info{color:var(--faint);font-size:12px;margin:2px 0 6px}
+.tests{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0 4px}.tests button{padding:9px 0;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--text);font:600 13px var(--display)}
+#mdown,#mup{width:44px;justify-content:center;font-size:18px}#mhold.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.tests button.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+#tpill{position:fixed;top:calc(64px*var(--sz));left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;padding:8px 14px;border-radius:20px;background:rgba(40,1,55,.92);border:1px solid var(--acc);color:var(--text);font:600 14px var(--display);font-variant-numeric:tabular-nums;z-index:3}
+#tpill.on{display:flex}#tpill i{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:pulse 1s ease-in-out infinite}#orbR{position:fixed;top:12px;right:16px}
+.ib.on .spin{animation:spin 2.4s linear infinite;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+#gears{position:fixed;top:14px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 130px);display:flex;gap:18px;align-items:center;flex-wrap:wrap;justify-content:center}.tools{display:flex;gap:8px}.tools .ib{width:calc(34px*var(--sz));height:calc(34px*var(--sz))}
+.grp{display:flex;align-items:center;gap:5px}.grp span{margin-right:3px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-family:var(--display);text-shadow:0 1px 3px #000,0 0 8px #000}
+.grp button{width:calc(34px*var(--sz));height:calc(34px*var(--sz));border-radius:50%;border:1px solid var(--line);background:var(--glass);color:var(--dim);font-size:14px;padding:0}
+.grp button.oc{display:none;border-color:var(--gold);color:var(--gold);font-family:var(--display);font-size:12px}body.ocu .grp button.oc{display:inline-block}.grp button.oc.sel{background:var(--gold);border-color:var(--gold);color:#16011e;animation:ocp 1.4s ease-in-out infinite}@keyframes ocp{50%{box-shadow:0 0 0 6px rgba(255,215,0,.28)}}body.ocon #thr .knob.on,body.ocon #joy .knob.on{background:var(--gold);box-shadow:0 0 0 6px rgba(255,215,0,.22)}.warn{margin:2px 0 8px;color:var(--gold);font-size:12px;line-height:1.45}
+.grp button.sel{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:700}
+#side{position:fixed;right:16px;top:calc(64px*var(--sz));display:flex;flex-direction:column;gap:10px;align-items:center}
+#photo,#rec{display:none}
+#rec i{width:36%;height:36%;border-radius:50%;border:2px solid var(--red)}
+#rec.on{background:var(--glass);border-color:var(--red)}#rec.on i{background:var(--red);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+#rtime{position:fixed;right:calc(66px*var(--sz) + 8px);display:none;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000}
+#rtime.on{display:block}
+#gp{display:none}#gp.on{display:grid}#gp svg{stroke:var(--acc)}
+.slot{position:fixed;bottom:22px}#joy{display:none;width:calc(180px*var(--sz));height:calc(180px*var(--sz))}#joy.L{left:22px}#joy.R{right:22px}#joy .track{border-radius:50%}#joy .track::after{left:50%;top:20%;bottom:20%;width:1px}#joy .track::before{content:"";position:absolute;background:var(--line);top:50%;left:20%;right:20%;height:1px}body.joy #thr,body.joy #str{display:none}body.joy #joy{display:block}body.joyR #side{right:auto;left:16px;top:calc(64px*var(--sz))}
+#thr{left:22px;width:calc(84px*var(--sz));height:min(calc(260px*var(--sz)),calc(100vh - 96px))}
+#str{right:22px;width:min(calc(300px*var(--sz)),40vw);height:calc(84px*var(--sz))}
+.track{position:absolute;inset:0;border-radius:999px;border:1px solid var(--line);background:rgba(22,1,30,.45)}
+.track::after{content:"";position:absolute;background:var(--line)}
+#thr .track::after{left:20%;right:20%;top:50%;height:1px}#str .track::after{top:20%;bottom:20%;left:50%;width:1px}
+.knob{position:absolute;width:calc(64px*var(--sz));height:calc(64px*var(--sz));border-radius:50%;background:var(--knob);left:50%;top:50%;translate:-50% -50%;transition:background .15s,box-shadow .15s}
+.knob.on{background:var(--acc);box-shadow:0 0 0 6px rgba(191,64,191,.22)}
+#stop{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);padding:calc(12px*var(--sz)) calc(26px*var(--sz));border:0;border-radius:24px;background:var(--bg2);color:var(--text);font-size:14px;font-family:var(--display);border:1px solid var(--line)}
+#saved{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);padding:8px 12px;border-radius:10px;background:rgba(40,1,55,.92);color:var(--text);border:1px solid var(--line);font-size:12px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}#saved.on{opacity:1}
+#sheet{position:fixed;top:0;right:0;bottom:0;width:min(300px,86vw);background:var(--bg1);border-left:1px solid var(--line);padding:18px 18px 24px;overflow-y:auto;touch-action:pan-y;transform:translateX(100%);transition:transform .25s ease;z-index:5}
+#sheet.on{transform:none}
+#scrim{position:fixed;inset:0;z-index:4;display:none}#scrim.on{display:block}
+#sheet h3{margin:0 0 14px;font-size:14px;font-weight:700;color:var(--text);font-family:var(--display);letter-spacing:.02em}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.row label{color:var(--text);font-size:13px;white-space:nowrap}.row output{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px;min-width:34px;text-align:right}
+.row input[type=range]{flex:1;accent-color:var(--acc);min-width:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:0;background:none;padding:6px 12px;color:var(--dim)}.seg button.sel{background:var(--acc);color:var(--acc-ink);font-weight:600}
+.sep{height:1px;background:var(--line);margin:10px 0}
+#reset{margin-top:14px;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:none;color:var(--dim)}
+@media (orientation:portrait){#gears{top:calc(64px*var(--sz))}#side{top:calc(120px*var(--sz))}#str{width:calc(100vw - 150px)}#stop{bottom:calc(140px*var(--sz));left:auto;right:22px;transform:none}}
+#gal{position:fixed;inset:0;background:var(--bg);z-index:6;display:none;flex-direction:column;touch-action:pan-y}#gal.on{display:flex}.bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;gap:10px}.bar h2{margin:0;font-size:17px;font-weight:700;color:var(--text);font-family:var(--display)}#grid{flex:1;overflow-y:auto;padding:0 16px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-content:start}.cell{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--bg2);border:0;padding:0}.cell img,.cell video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}.cell .dur{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;font-variant-numeric:tabular-nums}.cell .dur::before{content:"";border-left:7px solid #fff;border-top:4px solid transparent;border-bottom:4px solid transparent}#empty{color:var(--faint);grid-column:1/-1;text-align:center;padding:60px 0}#viewer{position:fixed;inset:0;background:#000;z-index:7;display:none;flex-direction:column}#viewer.on{display:flex}#vbody{flex:1;min-height:0;display:grid;place-items:center}#vbody img,#vbody video{max-width:100%;max-height:100%;object-fit:contain}.act{display:flex;gap:8px}.pill{height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line);background:var(--bg2);color:var(--text);display:flex;align-items:center;gap:6px}.pill.warn{border-color:var(--red);color:#16011e;background:var(--red)}
+#lost{position:fixed;inset:0;display:none;place-items:center;pointer-events:none;z-index:2}#lost.on{display:grid}
+#lost .card{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:16px;background:rgba(22,1,30,.88);border:1px solid var(--line);max-width:min(420px,80vw)}
+#lost b{display:block;font:700 16px var(--display);color:var(--text);margin-bottom:3px}#lost span{color:var(--dim);font-size:13px;line-height:1.45}
+#lost .spin{flex:none;width:26px;height:26px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--acc);animation:spin 1s linear infinite}
+body.down #view canvas,body.down #view img{filter:grayscale(1) brightness(.45)!important}
+html.app,html.app body{background:transparent}html.app #view{background:transparent}html.app body.down #view{background:rgba(10,0,14,.62)}
+#off{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:var(--bg);color:var(--dim);font-size:15px;line-height:1.6;z-index:9}#off code{color:var(--text);background:var(--bg2);padding:2px 8px;border-radius:6px}#off.on{display:grid}
+</style></head><body>
+<div id=view><canvas id=cam></canvas><img id=mj alt=""></div><div id=flash></div>
+<div class=ui>
+<button class=ib id=orbL title="Circle left"><svg viewBox="0 0 24 24" style="transform:scaleX(-1)"><g class=spin><path d="M18.5 8.5A7.5 7.5 0 1 0 19.5 13"/><path d="M19 4v4.5h-4.5"/></g></svg></button>
+<div id=ctime title="Connected"><i></i><span>0:00</span></div>
+<button class=ib id=orbR title="Circle right"><svg viewBox="0 0 24 24"><g class=spin><path d="M18.5 8.5A7.5 7.5 0 1 0 19.5 13"/><path d="M19 4v4.5h-4.5"/></g></svg></button>
+<div id=gears>
+ <div class=grp id=sp><span>Speed</span><button>1</button><button>2</button><button>3</button><button class=oc>MAX</button></div>
+ <div class=grp id=tn><span>Turn</span><button>1</button><button>2</button><button>3</button></div>
+ <div class=tools>
+  <button class=ib id=galb title="Photos &amp; videos"><svg viewBox="0 0 24 24"><rect x=4 y=4 width=7 height=7 rx=1.5 /><rect x=13 y=4 width=7 height=7 rx=1.5 /><rect x=4 y=13 width=7 height=7 rx=1.5 /><rect x=13 y=13 width=7 height=7 rx=1.5 /></svg></button>
+  <button class=ib id=cfg title="Settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx=16 cy=7 r=2 /><circle cx=10 cy=17 r=2 /></svg></button>
+ </div>
+</div>
+<div id=side>
+ <button class=ib id=photo title="Photo"><svg viewBox="0 0 24 24"><path d="M4 8.5h3l1.6-2.2h6.8L17 8.5h3v10H4z"/><circle cx=12 cy=13.2 r=3.3 /></svg></button>
+ <button class=ib id=rec title="Record"><i></i></button>
+ <div class=ib id=gp title="Controller connected"><svg viewBox="0 0 24 24"><path d="M6 9h12a4 4 0 0 1 3.9 4.9l-.8 3.3a2 2 0 0 1-3.4.9L15.5 16h-7l-2.2 2.1a2 2 0 0 1-3.4-.9l-.8-3.3A4 4 0 0 1 6 9z"/></svg></div>
+</div>
+<div id=rtime>0:00</div>
+<div class=slot id=thr><div class=track></div><div class=knob></div></div>
+<div class=slot id=str><div class=track></div><div class=knob></div></div>
+<div class=slot id=joy><div class=track></div><div class=knob></div></div>
+<button id=stop>Stop</button>
+</div>
+<div id=saved></div><div id=lost><div class=card><div class=spin></div><div><b id=lostT>Waiting for the car</b><span id=lostS>Turn the car on and connect this phone to its Wi-Fi. The picture comes up by itself.</span></div></div></div><div id=tpill><i></i><span></span></div>
+<div id=scrim></div>
+<div id=sheet>
+ <h3>Picture</h3>
+ <div class=row><label>Fit</label><div class=seg id=fit><button data-v=contain>Whole</button><button data-v=fill>Fill screen</button></div></div>
+ <div class=row><label>Zoom</label><input type=range id=zoom min=1 max=3 step=.1><output></output></div>
+ <div class=row><label>Brightness</label><input type=range id=bright min=.6 max=1.8 step=.05><output></output></div>
+ <div class=row><label>Date &amp; time stamp</label><div class=seg id=stamp><button data-v=0>Off</button><button data-v=1>On</button></div></div>
+ <div class=row><label>Flip upside down</label><div class=seg id=flip><button data-v=0>Off</button><button data-v=1>On</button></div></div>
+ <p class=info id=vpath></p>
+ <div class=sep></div><h3>Controls</h3>
+ <div class=row><label>Style</label><div class=seg id=style><button data-v=sliders>Two thumbs</button><button data-v=joyL>Stick L</button><button data-v=joyR>Stick R</button></div></div>
+ <div class=row><label>Size</label><input type=range id=size min=.7 max=1.4 step=.05><output></output></div>
+ <div class=row><label>See-through</label><input type=range id=opac min=.25 max=1 step=.05><output></output></div>
+ <div class=sep></div><h3>Driving</h3>
+ <div class=row><label>Circle speed</label><input type=range id=orbit min=.15 max=.8 step=.05><output></output></div>
+ <div class=row><label>Less steering at speed</label><input type=range id=ssr min=0 max=.7 step=.05><output></output></div>
+ <div class=row><label>Extra lock at full turn</label><input type=range id=boost min=0 max=48 step=4><output></output></div>
+ <p class=info>Extra lock leans the car's own trim into a full turn for a tighter circle (the trick from the stock app). It eases back after the turn, so set it to 0 if the car drifts for a moment afterwards.</p>
+ <div class=row><label>Full speed</label><div class=seg id=ocu><button data-v=0>Off</button><button data-v=1>Unlock</button></div></div>
+ <p class=warn>Adds a MAX speed: the car's full range, which the stock app only reaches with its speed turned all the way up (speed 3 here is already twice the stock app's normal top speed). Drains the battery faster. Resets to speed 3 every time the app opens.</p>
+ <div class=row><label>Steering trim</label><input type=range id=trim min=-40 max=40 step=2><output></output></div>
+ <div class=sep></div><h3>Tests</h3>
+ <p class=info>Tries the three slots in the drive message the stock app never changes, one value at a time, with the car standing still. Wheels off the ground, then watch the car and the camera and note the value when anything happens. Stop ends a test.</p>
+ <div class=tests><button data-slot=0>Slot A</button><button data-slot=1>Slot B</button><button data-slot=2>Slot C</button></div>
+ <p class=info>Found so far: Slot A is the car's steering trim (it is the Steering trim setting above). Slot B made the motor sound on one of its values.</p>
+ <div class=row><label>Hold a value</label><div class=seg id=mslot><button data-v=1>B</button><button data-v=2>C</button><button data-v=0>A</button></div></div>
+ <div class=row><button class=pill id=mdown>−</button><output id=mval style="flex:1;text-align:center;color:var(--text);font:700 18px var(--display)">1</output><button class=pill id=mup>+</button><button class=pill id=mhold>Hold</button></div>
+ <button id=reset>Reset to defaults</button>
+</div>
+<div id=gal><div class=bar><h2>Photos &amp; videos</h2><button class=ib id=galx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id=grid></div></div>
+<div id=viewer><div class=bar><button class=ib id=vback title=Back><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+ <div class=act><button class=pill id=vshare>Share</button><button class=pill id=vdel>Delete</button></div></div><div id=vbody></div></div>
+<div id=off><div>Car server isn't running.<br>In Termux: <code>python fpv_car.py serve</code></div></div>
+<script>
+const $=q=>document.querySelector(q);
+// inside the Android app (window.CarApp) video, photos, sharing and the controller are native
+const APP=!!window.CarApp;if(APP)document.documentElement.classList.add('app');
+// ---------- settings (remembered on this phone) ----------
+const DEF={sg:2,tg:3,ocu:0,stamp:0,ssr:.4,boost:32,style:'sliders',fit:'contain',zoom:1,bright:1,flip:0,size:1,opac:1,orbit:.35,trim:0};
+let cfg={...DEF};try{Object.assign(cfg,JSON.parse(localStorage.carcfg||'{}'))}catch(e){}
+if(cfg.sg>3)cfg.sg=3;   // overclock never survives a restart
+if(Math.abs(cfg.trim)<1)cfg.trim=0;   // the old software trim was a fraction
+const save=()=>{try{localStorage.carcfg=JSON.stringify(cfg)}catch(e){}};
+const fmt={zoom:v=>(+v).toFixed(1)+'×',bright:v=>Math.round(v*100)+'%',size:v=>Math.round(v*100)+'%',opac:v=>Math.round((1-v)*100)+'%',orbit:v=>Math.round(v*100)+'%',ssr:v=>Math.round(v*100)+'%',boost:v=>v?'+'+v:'Off',trim:v=>(v>0?'R ':v<0?'L ':'')+Math.abs(v)};
+function apply(){const r=document.documentElement.style;r.setProperty('--sz',cfg.size);r.setProperty('--op',cfg.opac);
+ $('#view').classList.toggle('fill',cfg.fit==='fill');
+ const tf=`scale(${cfg.zoom}) rotate(${cfg.flip?180:0}deg)`,fl=`brightness(${cfg.bright}) contrast(${1+(cfg.bright-1)*.25})`;
+ for(const el of [$('#cam'),$('#mj')]){el.style.transform=tf;el.style.filter=fl}
+ if(APP)try{CarApp.view(cfg.fit,+cfg.zoom,+cfg.flip,+cfg.bright)}catch(e){}
+ for(const id of ['zoom','bright','size','opac','orbit','trim','ssr','boost']){const i=$('#'+id);i.value=cfg[id];i.nextElementSibling.textContent=fmt[id](cfg[id])}
+ if(!cfg.ocu&&cfg.sg>3)cfg.sg=3;document.body.classList.toggle('ocu',!!cfg.ocu);
+ for(const id of ['fit','flip','style','ocu','stamp'])document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('sel',b.dataset.v==String(cfg[id])));
+ document.body.classList.toggle('joy',cfg.style!=='sliders');document.body.classList.toggle('joyR',cfg.style==='joyR');
+ $('#joy').className='slot '+(cfg.style==='joyR'?'R':'L');
+ drawChips()}
+for(const id of ['zoom','bright','size','opac','orbit','trim','ssr','boost'])$('#'+id).oninput=e=>{cfg[id]=+e.target.value;apply();save();if(id==='trim'||id==='boost')sendTrim()};
+const sendTrim=()=>{fetch('/trim?v='+cfg.trim).catch(()=>{});fetch('/boost?v='+cfg.boost).catch(()=>{})};   // the car's own trim (slot A) and extra lock
+for(const id of ['fit','flip','style','ocu','stamp'])document.querySelectorAll('#'+id+' button').forEach(b=>b.onclick=()=>{cfg[id]=(id==='flip'||id==='ocu'||id==='stamp')?+b.dataset.v:b.dataset.v;apply();save()});
+$('#reset').onclick=()=>{const g={sg:Math.min(cfg.sg,3),tg:cfg.tg};cfg={...DEF,...g};apply();save()};
+const sheet=(on)=>{$('#sheet').classList.toggle('on',on);$('#scrim').classList.toggle('on',on)};
+$('#cfg').onclick=()=>sheet(true);$('#scrim').onpointerdown=()=>sheet(false);
+
+// ---------- gears ----------
+function drawChips(){document.querySelectorAll('#sp button').forEach((b,i)=>b.classList.toggle('sel',i+1===cfg.sg));document.body.classList.toggle('ocon',cfg.sg===4);
+ document.querySelectorAll('#tn button').forEach((b,i)=>b.classList.toggle('sel',i+1===cfg.tg))}
+document.querySelectorAll('#sp button').forEach((b,i)=>b.onclick=()=>{cfg.sg=i+1;drawChips();save()});
+document.querySelectorAll('#tn button').forEach((b,i)=>b.onclick=()=>{cfg.tg=i+1;drawChips();save()});
+
+// ---------- circle buttons ----------
+let orbit=0;
+function setOrbit(d){orbit=orbit===d?0:d;$('#orbL').classList.toggle('on',orbit===-1);$('#orbR').classList.toggle('on',orbit===1)}
+$('#orbL').onclick=()=>setOrbit(-1);$('#orbR').onclick=()=>setOrbit(1);
+
+// ---------- touch sliders (spring back to centre; both thumbs at once) ----------
+const touch={t:null,s:null};
+function slider(id,axis){const el=$('#'+id),k=el.querySelector('.knob'),key=axis==='y'?'t':'s';
+ const span=()=>((axis==='y'?el.clientHeight:el.clientWidth)-k.offsetWidth)/2;
+ const set=v=>{k.style.transform=axis==='y'?`translateY(${-v*span()}px)`:`translateX(${v*span()}px)`};
+ const read=e=>{const r=el.getBoundingClientRect(),c=axis==='y'?r.top+r.height/2:r.left+r.width/2;
+  const v=axis==='y'?-(e.clientY-c)/span():(e.clientX-c)/span();return Math.max(-1,Math.min(1,v))};
+ el.onpointerdown=e=>{el.setPointerCapture(e.pointerId);touch[key]=read(e);if(orbit)setOrbit(0)};
+ el.onpointermove=e=>{if(touch[key]!==null)touch[key]=read(e)};
+ el.onpointerup=el.onpointercancel=()=>{touch[key]=null};
+ return{set,k}}
+const T=slider('thr','y'),S=slider('str','x');
+// one-thumb joystick (settings > Style)
+const J=$('#joy'),JK=J.querySelector('.knob');
+const jrad=()=>(J.clientWidth-JK.offsetWidth)/2;
+function jread(e){const r=J.getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/jrad(),y=-(e.clientY-r.top-r.height/2)/jrad();
+ const m=Math.hypot(x,y);if(m>1){x/=m;y/=m}touch.s=x;touch.t=y}
+let jOn=false;
+J.onpointerdown=e=>{J.setPointerCapture(e.pointerId);jOn=true;jread(e);if(orbit)setOrbit(0)};
+J.onpointermove=e=>{if(jOn)jread(e)};
+J.onpointerup=J.onpointercancel=()=>{jOn=false;touch.t=touch.s=null};
+const Jset=(t,s)=>{JK.style.transform=`translate(${s*jrad()}px,${-t*jrad()}px)`;JK.classList.toggle('on',!!(t||s))};
+
+// ---------- PlayStation / standard gamepad ----------
+// R2 forward, L2 reverse, left stick steer (right stick up/down also throttle)
+// D-pad up/down speed gear, left/right turn gear, X stop, Square photo, Triangle record, L1/R1 circle
+let prevBtn=[],braking=false;const dz=v=>Math.abs(v)<.1?0:v;
+function readPad(){let gp=null;if(APP){try{gp=JSON.parse(CarApp.pad()||'null')}catch(e){}}
+ else gp=[...(navigator.getGamepads?navigator.getGamepads():[])].find(Boolean);
+ $('#gp').classList.toggle('on',!!gp);if(!gp)return null;
+ const b=i=>gp.buttons[i]?gp.buttons[i].value:0,pr=i=>gp.buttons[i]&&gp.buttons[i].pressed,edge=i=>pr(i)&&!prevBtn[i];
+ if(edge(12)){cfg.sg=Math.min(cfg.ocu?4:3,cfg.sg+1);drawChips();save()} if(edge(13)){cfg.sg=Math.max(1,cfg.sg-1);drawChips();save()}
+ if(edge(15)){cfg.tg=Math.min(3,cfg.tg+1);drawChips();save()} if(edge(14)){cfg.tg=Math.max(1,cfg.tg-1);drawChips();save()}
+ if(edge(2))photo(); if(edge(3))toggleRec(); if(edge(4))setOrbit(-1); if(edge(5))setOrbit(1);
+ braking=pr(0);if(braking&&orbit)setOrbit(0);prevBtn=gp.buttons.map(x=>x.pressed);
+ let thr=b(7)-b(6);if(!thr)thr=dz(-(gp.axes[3]||0));
+ return{t:thr,s:dz(gp.axes[0]||0)}}
+
+// ---------- drive loop ----------
+let sentZero=true;
+function tick(){const p=readPad();
+ let t=touch.t!==null?touch.t:(p?p.t:0),s=touch.s!==null?touch.s:(p?p.s:0);
+ if(braking)t=s=0;
+ if(orbit&&(t||s)&&touch.t===null&&touch.s===null&&p)setOrbit(0);   // any stick input cancels circling
+ T.set(t);S.set(s);Jset(t,s);T.k.classList.toggle('on',t!==0||orbit!==0);S.k.classList.toggle('on',s!==0||orbit!==0);
+ const oc=cfg.sg===4;   // OC: full stick = full protocol range (server switches to OC_LIMIT)
+ let ot=+(oc?t:t*cfg.sg/3).toFixed(2),os=+(s*cfg.tg/3).toFixed(2);
+ if(ot&&!(orbit&&!t&&!s)){const sf=Math.abs(ot)*(oc?1:76/127);os=+(os*(1-cfg.ssr*sf)).toFixed(2)}   // less steering the faster it goes
+ if(orbit&&!t&&!s){ot=cfg.orbit;os=orbit;T.set(cfg.orbit);S.set(orbit);Jset(cfg.orbit,orbit*.7)}
+ if(ot||os){fetch(`/drive?t=${ot}&s=${os}&ms=350${oc&&!orbit?'&oc=1':''}`).catch(()=>{});sentZero=false}
+ else if(!sentZero){fetch('/stop').catch(()=>{});sentZero=true}}
+setInterval(tick,100);
+$('#stop').onclick=()=>{touch.t=touch.s=null;setOrbit(0);endTest();mstop();fetch('/stop').catch(()=>{});sentZero=true};
+
+// ---------- tests of the unknown slots (bytes 11-13 of the drive message) ----------
+// A normally 128 (a centred channel like steering): tried below and above centre.
+// B and C normally 0 (flags?): each single bit, then all on.
+const TEST_VALUES=[[128,104,80,52,152,176,204,128],[1,2,4,8,16,32,64,128,255,0],[1,2,4,8,16,32,64,128,255,0]];
+let test=null;
+function endTest(){if(!test)return;clearInterval(test.timer);test=null;fetch('/extra').catch(()=>{});
+ $('#tpill').classList.remove('on');document.querySelectorAll('.tests button').forEach(b=>b.classList.remove('on'))}
+function runTest(slot){const was=test&&test.slot;endTest();mstop();if(was===slot)return;
+ setOrbit(0);sheet(false);const vals=TEST_VALUES[slot],name='ABC'[slot];let i=0,held=0;
+ document.querySelector(`.tests button[data-slot="${slot}"]`).classList.add('on');$('#tpill').classList.add('on');
+ const step=()=>{if(i>=vals.length){endTest();toast('Slot '+name+' test done');return}
+  const v=vals[i];$('#tpill span').textContent=`Slot ${name}  =  ${v}  (${i+1}/${vals.length})`;
+  fetch(`/extra?slot=${slot}&v=${v}`).catch(()=>{});if(++held>=4){held=0;i++}};   // each value ~2 s
+ test={slot,timer:setInterval(step,500)};step()}
+document.querySelectorAll('.tests button').forEach(b=>b.onclick=()=>runTest(+b.dataset.slot));
+// manual: step through one slot's values and hold one as long as wanted, driving or not
+const MSTEPS=[[...Array(256).keys()],[1,2,4,8,16,32,64,128,255,3,5,6,7,9,10,12,15,17,24,48,96,192],[1,2,4,8,16,32,64,128,255]];
+let mslot=1,mi=0,mhold=null;
+function mshow(){const v=MSTEPS[mslot][mi];$('#mval').textContent=v;
+ document.querySelectorAll('#mslot button').forEach(b=>b.classList.toggle('sel',+b.dataset.v===mslot));
+ if(mhold){$('#tpill span').textContent=`Holding slot ${'ABC'[mslot]}  =  ${v}`}}
+function mstop(){if(!mhold)return;clearInterval(mhold);mhold=null;$('#mhold').classList.remove('on');$('#mhold').textContent='Hold';
+ $('#tpill').classList.remove('on');fetch('/extra').catch(()=>{})}
+document.querySelectorAll('#mslot button').forEach(b=>b.onclick=()=>{mslot=+b.dataset.v;mi=mslot===0?128:0;mshow()});
+$('#mdown').onclick=()=>{mi=(mi-1+MSTEPS[mslot].length)%MSTEPS[mslot].length;mshow()};
+$('#mup').onclick=()=>{mi=(mi+1)%MSTEPS[mslot].length;mshow()};
+$('#mhold').onclick=()=>{if(mhold)return mstop();endTest();
+ mhold=setInterval(()=>fetch(`/extra?slot=${mslot}&v=${MSTEPS[mslot][mi]}`).catch(()=>{}),500);
+ $('#mhold').classList.add('on');$('#mhold').textContent='Release';$('#tpill').classList.add('on');mshow()};
+mshow();
+addEventListener('gamepadconnected',()=>$('#gp').classList.add('on'));
+
+// ---------- camera: H.264 decoded by the phone's hardware (WebCodecs), ffmpeg image feed as backup ----------
+const cv=$('#cam'),cx=cv.getContext('2d');let dec=null,started=false,gotFrame=false,useMjpeg=false,behind=false;
+function showLive(){$('#photo').style.display='grid';$('#rec').style.display='grid';
+ $('#vpath').textContent=APP?'Video: decoded by the app (fastest).':useMjpeg?'Video: backup picture feed (ffmpeg). Slower than the hardware decoder.':"Video: the phone’s hardware decoder.";
+ if(!conn0){conn0=Date.now();$('#ctime').classList.add('on')}}
+// how long the car has been connected; turns gold at 4:00 because the battery lasts about five minutes
+let conn0=null,miss=0;
+setInterval(()=>{if(!conn0)return;const s=(Date.now()-conn0)/1000|0;
+ $('#ctime span').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0');$('#ctime').classList.toggle('late',s>=240)},1000);
+function codecFrom(buf){for(let i=0;i<buf.length-8;i++)if(buf[i]==0&&buf[i+1]==0&&buf[i+2]==0&&buf[i+3]==1&&(buf[i+4]&31)==7)
+ return 'avc1.'+[buf[i+5],buf[i+6],buf[i+7]].map(x=>x.toString(16).padStart(2,'0')).join('');return null}
+function newDecoder(){if(dec)try{dec.close()}catch(e){}started=false;
+ dec=new VideoDecoder({output:f=>{if(cv.width!==f.displayWidth){cv.width=f.displayWidth;cv.height=f.displayHeight}
+   cx.drawImage(f,0,0);f.close();gotFrame=true;if(cv.style.display!=='block'){cv.style.display='block';showLive()}},
+  error:()=>{dec=null}})}
+function mjpeg(){if(useMjpeg)return;useMjpeg=true;const im=$('#mj');
+ im.onload=()=>{im.style.display='block';showLive()};im.onerror=()=>setTimeout(()=>{im.src='/video.mjpg?'+Date.now()},1500);
+ im.src='/video.mjpg'}
+async function video(){if(APP)return;
+ let ok=false;try{ok=('VideoDecoder' in window)&&(await VideoDecoder.isConfigSupported({codec:'avc1.42001f'})).supported}catch(e){}
+ if(!ok)return mjpeg();
+ setTimeout(()=>{if(!gotFrame)fetch('/status').then(r=>r.json()).then(j=>{if(j.video&&!gotFrame)mjpeg()}).catch(()=>{})},5000);
+ while(!useMjpeg){try{const r=await fetch('/video',{cache:'no-store'});const rd=r.body.getReader();let pend=new Uint8Array(0),ts=0;newDecoder();
+  while(true){if(useMjpeg){rd.cancel();try{dec&&dec.close()}catch(e){}break}const{value,done}=await rd.read();if(done)break;
+   const m=new Uint8Array(pend.length+value.length);m.set(pend);m.set(value,pend.length);pend=m;
+   while(pend.length>=5){const n=new DataView(pend.buffer,pend.byteOffset).getUint32(0),k=pend[4];if(pend.length<5+n)break;
+    const fr=pend.slice(5,5+n);pend=pend.slice(5+n);
+    if(k===2){newDecoder();continue}
+    if(!dec)newDecoder();
+    if(!started){if(k!==1)continue;const c=codecFrom(fr);if(!c)continue;dec.configure({codec:c,optimizeForLatency:true});started=true}
+    if(k===1)behind=false;
+    if(!behind&&dec.decodeQueueSize>2)behind=true;   // falling behind: drop to the next keyframe
+    if(behind)continue;
+    dec.decode(new EncodedVideoChunk({type:k===1?'key':'delta',timestamp:(ts+=40000),data:fr}))}}}catch(e){}
+  await new Promise(r=>setTimeout(r,1000))}}
+video();
+
+// ---------- photo + record (saved on the phone by the script, full 720p) ----------
+function toast(msg){const el=$('#saved');el.textContent=msg;el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on'),3000)}
+function flash(){const f=$('#flash');f.classList.add('on');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')))}
+function photo(){if($('#photo').style.display!=='grid')return;flash();
+ if(APP){let n='';try{n=CarApp.photo(+cfg.flip,+cfg.stamp)}catch(e){}toast(n?'Saved '+n:'Photo failed');return}
+ fetch('/snapshot?flip='+cfg.flip+'&stamp='+cfg.stamp+'&tz='+(-new Date().getTimezoneOffset())).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>toast('Saved '+j.file.split('/').pop()))
+ .catch(()=>{ // no ffmpeg: grab what's on screen instead
+  const src=useMjpeg?$('#mj'):cv,c=document.createElement('canvas');c.width=src.naturalWidth||src.width;c.height=src.naturalHeight||src.height;
+  const g=c.getContext('2d');if(cfg.flip){g.translate(c.width,c.height);g.rotate(Math.PI)}g.drawImage(src,0,0);
+  c.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='car_'+Date.now()+'.jpg';a.click();toast('Saved to Downloads')},'image/jpeg',.92)})}
+$('#photo').onclick=photo;
+let recOn=false,recT0=0,recTimer=null;
+function toggleRec(){if($('#rec').style.display!=='grid')return;
+ fetch('/record?on='+(recOn?0:1)+'&stamp='+cfg.stamp+'&tz='+(-new Date().getTimezoneOffset())).then(r=>r.json()).then(j=>{recOn=j.recording;$('#rec').classList.toggle('on',recOn);$('#rtime').classList.toggle('on',recOn);
+  clearInterval(recTimer);
+  if(recOn){recT0=Date.now();const r=$('#rec').getBoundingClientRect();$('#rtime').style.top=(r.top+r.height/2-8)+'px';$('#rtime').textContent='0:00';
+   recTimer=setInterval(()=>{const s=(Date.now()-recT0)/1000|0;$('#rtime').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0')},500)}
+  else if(j.file)toast(cfg.stamp?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
+$('#rec').onclick=toggleRec;
+
+// ---------- gallery: everything the car has saved on this phone ----------
+let media=[],cur=null;
+const fmtDur=d=>isFinite(d)?(d/60|0)+':'+String(Math.round(d%60)).padStart(2,'0'):'';
+function openGal(){$('#gal').classList.add('on');touch.t=touch.s=null;fetch('/stop').catch(()=>{});
+ fetch('/media/list',{cache:'no-store'}).then(r=>r.json()).then(list=>{media=list;const g=$('#grid');g.innerHTML='';
+  if(!list.length){g.innerHTML='<div id=empty>No photos or videos yet.</div>';return}
+  for(const m of list){const b=document.createElement('button');b.className='cell';const src='/media/file/'+encodeURIComponent(m.name);
+   if(m.type==='photo')b.innerHTML=`<img loading=lazy src="${src}" alt="">`;
+   else{b.innerHTML=`<video preload=metadata muted playsinline src="${src}#t=0.3"></video><span class=dur></span>`;
+    const v=b.querySelector('video');v.onloadedmetadata=()=>{b.querySelector('.dur').textContent=fmtDur(v.duration)}}
+   b.onclick=()=>openView(m);g.appendChild(b)}}).catch(()=>{})}
+function openView(m){cur=m;const src='/media/file/'+encodeURIComponent(m.name),vb=$('#vbody');
+ vb.innerHTML=m.type==='photo'?`<img src="${src}" alt="">`:`<video src="${src}" controls autoplay playsinline></video>`;
+ $('#vdel').classList.remove('warn');$('#vdel').textContent='Delete';$('#viewer').classList.add('on')}
+function closeView(){$('#viewer').classList.remove('on');$('#vbody').innerHTML='';cur=null}
+$('#galb').onclick=openGal;$('#galx').onclick=()=>$('#gal').classList.remove('on');$('#vback').onclick=closeView;
+$('#vdel').onclick=()=>{const b=$('#vdel');
+ if(!b.classList.contains('warn')){b.classList.add('warn');b.textContent='Tap to confirm';clearTimeout(b.t);b.t=setTimeout(()=>{b.classList.remove('warn');b.textContent='Delete'},3000);return}
+ fetch('/media/delete?name='+encodeURIComponent(cur.name)).then(()=>{closeView();openGal()})};
+$('#vshare').onclick=async()=>{if(!cur)return;if(APP){try{CarApp.share(cur.name)}catch(e){}return}try{const r=await fetch('/media/file/'+encodeURIComponent(cur.name));const blob=await r.blob();
+ const f=new File([blob],cur.name,{type:blob.type});if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f]});else toast('Sharing not supported here')}catch(e){}};
+
+// ---------- full screen, home-screen app, server check ----------
+const standalone=matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+function lock(){try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
+function goFull(){const d=document.documentElement;
+ if(!document.fullscreenElement&&d.requestFullscreen)d.requestFullscreen({navigationUI:'hide'}).then(lock).catch(()=>{});else lock()}
+if(!APP){if(standalone)lock();else addEventListener('pointerdown',goFull,{once:true,capture:true});
+ if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{})}
+let everLive=false,downAt=0;
+function carState(live){
+ if(live&&APP&&$('#photo').style.display!=='grid')showLive();
+ if(live){everLive=true;miss=0;if(downAt){downAt=0;$('#lost').classList.remove('on');document.body.classList.remove('down')}return}
+ if(++miss<2)return;                                   // ~2 s without a frame
+ if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});
+  conn0=null;$('#ctime').classList.remove('on','late')}
+ if(everLive){$('#lostT').textContent='Car disconnected';
+  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'}
+ $('#lost').classList.add('on');document.body.classList.add('down')}
+let polls=0;
+setInterval(()=>fetch('/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{$('#off').classList.remove('on');
+ if(++polls%3===0)sendTrim();carState(!!j.video)})
+ .catch(()=>{$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
+apply();sendTrim();
+</script></body></html>
