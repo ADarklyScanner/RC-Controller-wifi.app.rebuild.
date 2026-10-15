@@ -438,6 +438,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 #saved{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);padding:8px 12px;border-radius:10px;background:rgba(40,1,55,.92);color:var(--text);border:1px solid var(--line);font-size:12px;opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap}#saved.on{opacity:1}
 #sheet{position:fixed;top:0;right:0;bottom:0;width:min(300px,86vw);background:var(--bg1);border-left:1px solid var(--line);padding:18px 18px 24px;overflow-y:auto;touch-action:pan-y;transform:translateX(100%);transition:transform .25s ease;z-index:5}
 #sheet.on{transform:none}
+.gpf{outline:2px solid var(--acc);outline-offset:2px;border-radius:8px}
 #scrim{position:fixed;inset:0;z-index:4;display:none}#scrim.on{display:block}
 #sheet h3{margin:0 0 14px;font-size:14px;font-weight:700;color:var(--text);font-family:var(--display);letter-spacing:.02em}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
@@ -508,6 +509,8 @@ html.app,html.app body{background:transparent}html.app #view{background:transpar
  <p class=info>Found so far: Slot A is the car's steering trim (it is the Steering trim setting above). Slot B made the motor sound on one of its values.</p>
  <div class=row><label>Hold a value</label><div class=seg id=mslot><button data-v=1>B</button><button data-v=2>C</button><button data-v=0>A</button></div></div>
  <div class=row><button class=pill id=mdown>−</button><output id=mval style="flex:1;text-align:center;color:var(--text);font:700 18px var(--display)">1</output><button class=pill id=mup>+</button><button class=pill id=mhold>Hold</button></div>
+ <div class=sep></div><h3>Controller</h3>
+ <p class=info>PlayStation names (Xbox: A, B, X, Y, LB, RB, LT, RT, View, Menu). R2 forward, L2 reverse, left stick steers, hold ✕ to brake. D-pad: speed and turn gears. □ photo, △ record, L1 / R1 circle. ○ stops. Options: these settings (D-pad picks and changes a row, ✕ presses it). Share: photos and videos. Press the left stick: whole picture or fill screen. Press the right stick: zoom. The controller buzzes at 4:00 and if the car drops out.</p>
  <button id=reset>Reset to defaults</button>
 </div>
 <div id=gal><div class=bar><h2>Photos &amp; videos</h2><button class=ib id=galx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id=grid></div></div>
@@ -577,20 +580,81 @@ J.onpointermove=e=>{if(jOn)jread(e)};
 J.onpointerup=J.onpointercancel=()=>{jOn=false;touch.t=touch.s=null};
 const Jset=(t,s)=>{JK.style.transform=`translate(${s*jrad()}px,${-t*jrad()}px)`;JK.classList.toggle('on',!!(t||s))};
 
-// ---------- PlayStation / standard gamepad ----------
-// R2 forward, L2 reverse, left stick steer (right stick up/down also throttle)
-// D-pad up/down speed gear, left/right turn gear, X stop, Square photo, Triangle record, L1/R1 circle
-let prevBtn=[],braking=false;const dz=v=>Math.abs(v)<.1?0:v;
+// ---------- PlayStation / any gamepad ----------
+// Driving: R2 forward, L2 reverse, left stick steer (right stick up/down also throttle), hold X to brake.
+// D-pad up/down speed gear, left/right turn gear, Square photo, Triangle record, L1/R1 circle left/right.
+// Circle stop (like the Stop button), Options settings, Share photos & videos, L3 whole / fill screen, R3 zoom.
+// In settings: D-pad up/down picks a row, left/right changes it, X presses it, Circle or Options closes.
+// In photos & videos: D-pad moves, X opens (plays / pauses a video), left/right next / previous,
+// Square shares, Triangle deletes (twice to confirm), Circle goes back.
+let prevBtn=[],braking=false,padWas=false,padWarned=false;const dz=v=>Math.abs(v)<.1?0:v;
+function buzz(ms,strong,gp){try{if(APP)CarApp.buzz(ms,strong);else gp&&gp.vibrationActuator&&gp.vibrationActuator.playEffect('dual-rumble',{duration:ms,strongMagnitude:strong,weakMagnitude:strong*.6}).catch(()=>{})}catch(e){}}
+let lastGp=null;const padBuzz=(ms,strong)=>{if(lastGp)buzz(ms,strong,lastGp)};
+// settings sheet: one row at a time
+let fi=0;
+const fItems=()=>[...document.querySelectorAll('#sheet .row,#sheet .tests button,#reset')];
+function fShow(){const L=fItems();document.querySelectorAll('.gpf').forEach(e=>e.classList.remove('gpf'));if(!L.length)return;fi=(fi+L.length)%L.length;
+ const el=L[fi];el.classList.add('gpf');el.scrollIntoView({block:'nearest'})}
+function fStep(d){const el=fItems()[fi];if(!el)return;
+ const r=el.querySelector('input[type=range]');
+ if(r){const v=Math.min(+r.max,Math.max(+r.min,+(+r.value+d*(+r.step||1)).toFixed(3)));r.value=v;r.oninput({target:r});return}
+ const sg=el.querySelectorAll('.seg button');
+ if(sg.length){let i=[...sg].findIndex(b=>b.classList.contains('sel'));i=Math.min(sg.length-1,Math.max(0,i+d));sg[i].click();return}
+ if(el.querySelector('#mdown'))(d<0?$('#mdown'):$('#mup')).click()}
+function fPress(){const el=fItems()[fi];if(!el)return;
+ if(el.tagName==='BUTTON')return el.click();
+ if(el.querySelector('#mhold'))return $('#mhold').click();
+ const sg=el.querySelectorAll('.seg button');
+ if(sg.length){const i=[...sg].findIndex(b=>b.classList.contains('sel'));sg[(i+1)%sg.length].click()}}
+// photos & videos: a grid, then one at a time
+let gi=0;
+function gShow(){const c=[...document.querySelectorAll('#grid .cell')];document.querySelectorAll('.gpf').forEach(e=>e.classList.remove('gpf'));if(!c.length)return;
+ gi=Math.min(c.length-1,Math.max(0,gi));c[gi].classList.add('gpf');c[gi].scrollIntoView({block:'nearest'})}
+function gMove(dx,dy){const c=[...document.querySelectorAll('#grid .cell')];if(!c.length)return;
+ if(dx){gi+=dx}else{let cols=1;while(cols<c.length&&c[cols].offsetTop===c[0].offsetTop)cols++;const n=gi+dy*cols;if(n>=0&&n<c.length)gi=n}
+ gShow()}
+function vStep(d){if(!cur)return;const i=media.findIndex(m=>m.name===cur.name)+d;if(i>=0&&i<media.length){gi=i;openView(media[i]);gShow()}}
 function readPad(){let gp=null;if(APP){try{gp=JSON.parse(CarApp.pad()||'null')}catch(e){}}
  else gp=[...(navigator.getGamepads?navigator.getGamepads():[])].find(Boolean);
- $('#gp').classList.toggle('on',!!gp);if(!gp)return null;
- const b=i=>gp.buttons[i]?gp.buttons[i].value:0,pr=i=>gp.buttons[i]&&gp.buttons[i].pressed,edge=i=>pr(i)&&!prevBtn[i];
- if(edge(12)){cfg.sg=Math.min(cfg.ocu?4:3,cfg.sg+1);drawChips();save()} if(edge(13)){cfg.sg=Math.max(1,cfg.sg-1);drawChips();save()}
- if(edge(15)){cfg.tg=Math.min(3,cfg.tg+1);drawChips();save()} if(edge(14)){cfg.tg=Math.max(1,cfg.tg-1);drawChips();save()}
- if(edge(2))photo(); if(edge(3))toggleRec(); if(edge(4))setOrbit(-1); if(edge(5))setOrbit(1);
- braking=pr(0);if(braking&&orbit)setOrbit(0);prevBtn=gp.buttons.map(x=>x.pressed);
- let thr=b(7)-b(6);if(!thr)thr=dz(-(gp.axes[3]||0));
- return{t:thr,s:dz(gp.axes[0]||0)}}
+ $('#gp').classList.toggle('on',!!gp);
+ if(!gp){if(padWas){padWas=false;braking=false;prevBtn=[];document.querySelectorAll('.gpf').forEach(e=>e.classList.remove('gpf'))}lastGp=null;return null}
+ lastGp=gp;
+ if(!padWas){padWas=true;prevBtn=gp.buttons.map(x=>x&&x.pressed);   // the press that woke it isn't acted on
+  if(!APP&&gp.mapping!=='standard'&&!padWarned){padWarned=true;toast('In the browser the buttons of this controller may be mixed up. The app reads them properly.')}}
+ const b=i=>gp.buttons[i]?gp.buttons[i].value:0,pr=i=>!!(gp.buttons[i]&&gp.buttons[i].pressed),edge=i=>pr(i)&&!prevBtn[i];
+ const thrIn=()=>{let t=b(7)-b(6);if(!t)t=dz(-(gp.axes[3]||0));return t};
+ const inSheet=$('#sheet').classList.contains('on'),inGal=$('#gal').classList.contains('on'),inView=$('#viewer').classList.contains('on');
+ let out={t:thrIn(),s:dz(gp.axes[0]||0)};
+ if(inView){   // one photo or video
+  if(edge(1))closeView(),gShow(); if(edge(14))vStep(-1); if(edge(15))vStep(1);
+  if(edge(0)){const v=$('#vbody video');if(v)v.paused?v.play().catch(()=>{}):v.pause()}
+  if(edge(2))$('#vshare').click(); if(edge(3))$('#vdel').click();
+  if(edge(8))closeView(),$('#gal').classList.remove('on');
+  braking=false;out=null}
+ else if(inGal){   // the grid (driving waits, as it does for touch)
+  if(edge(12))gMove(0,-1); if(edge(13))gMove(0,1); if(edge(14))gMove(-1,0); if(edge(15))gMove(1,0);
+  if(edge(0)){const c=document.querySelectorAll('#grid .cell')[gi];if(c)c.click()}
+  if(edge(1)||edge(8))$('#gal').classList.remove('on');
+  if(!document.querySelector('#grid .gpf'))gShow();
+  braking=false;out=null}
+ else if(inSheet){   // settings: the sticks and triggers still drive, so trim can be set on the move
+  if(!document.querySelector('#sheet .gpf'))fShow();
+  if(edge(12)){fi--;fShow()} if(edge(13)){fi++;fShow()} if(edge(14))fStep(-1); if(edge(15))fStep(1);
+  if(edge(0))fPress(); if(edge(1)||edge(9))sheet(false);
+  braking=false}
+ else{
+  if(edge(12)){cfg.sg=Math.min(cfg.ocu?4:3,cfg.sg+1);drawChips();save()} if(edge(13)){cfg.sg=Math.max(1,cfg.sg-1);drawChips();save()}
+  if(edge(15)){cfg.tg=Math.min(3,cfg.tg+1);drawChips();save()} if(edge(14)){cfg.tg=Math.max(1,cfg.tg-1);drawChips();save()}
+  if(edge(2))photo(); if(edge(3))toggleRec(); if(edge(4))setOrbit(-1); if(edge(5))setOrbit(1);
+  if(edge(1)){$('#stop').onclick();toast('Stopped')}
+  if(edge(9)){fi=0;sheet(true)}
+  if(edge(8)){gi=0;openGal()}
+  if(edge(10)){cfg.fit=cfg.fit==='fill'?'contain':'fill';apply();save();toast(cfg.fit==='fill'?'Fill screen':'Whole picture')}
+  if(edge(11)){const Z=[1,1.5,2,3];cfg.zoom=Z[(Z.findIndex(z=>z>=+cfg.zoom-.01)+1)%Z.length]||1;apply();save();toast('Zoom '+fmt.zoom(cfg.zoom))}
+  braking=pr(0);if(braking&&orbit)setOrbit(0)}
+ if(!inSheet)document.querySelectorAll('#sheet .gpf').forEach(e=>e.classList.remove('gpf'));
+ prevBtn=gp.buttons.map(x=>!!(x&&x.pressed));
+ return out}
 
 // ---------- drive loop ----------
 let sentZero=true;
@@ -648,7 +712,8 @@ function showLive(){$('#photo').style.display='grid';$('#rec').style.display='gr
 // how long the car has been connected; turns gold at 4:00 because the battery lasts about five minutes
 let conn0=null,miss=0;
 setInterval(()=>{if(!conn0)return;const s=(Date.now()-conn0)/1000|0;
- $('#ctime span').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0');$('#ctime').classList.toggle('late',s>=240)},1000);
+ $('#ctime span').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0');$('#ctime').classList.toggle('late',s>=240);
+ if(s===240)padBuzz(600,1)},1000);   // the battery has about a minute left: a buzz in his hands
 function codecFrom(buf){for(let i=0;i<buf.length-8;i++)if(buf[i]==0&&buf[i+1]==0&&buf[i+2]==0&&buf[i+3]==1&&(buf[i+4]&31)==7)
  return 'avc1.'+[buf[i+5],buf[i+6],buf[i+7]].map(x=>x.toString(16).padStart(2,'0')).join('');return null}
 function newDecoder(){if(dec)try{dec.close()}catch(e){}started=false;
@@ -731,7 +796,7 @@ function carState(live){
  if(live&&APP&&$('#photo').style.display!=='grid')showLive();
  if(live){everLive=true;miss=0;if(downAt){downAt=0;$('#lost').classList.remove('on');document.body.classList.remove('down')}return}
  if(++miss<2)return;                                   // ~2 s without a frame
- if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});
+ if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});if(everLive)padBuzz(900,1);
   conn0=null;$('#ctime').classList.remove('on','late')}
  if(everLive){$('#lostT').textContent='Car disconnected';
   $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'}
