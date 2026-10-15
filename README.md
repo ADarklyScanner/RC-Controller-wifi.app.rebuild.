@@ -14,8 +14,21 @@ Both share one screen (the app copies it from the Termux script at build time, `
 - Circle left / right buttons, steering trim (the car's own), extra lock at full turn, less steering at speed
 - Live 720p video (hardware decoded), photos and recordings saved to the phone's Gallery, optional date stamp
 - Gallery with share and delete, connected timer (gold at 4:00, the battery lasts about five minutes),
-  "Car disconnected" notice, PlayStation controller support
+  "Car disconnected" notice, PlayStation controller support (any Bluetooth gamepad: Xbox, 8BitDo and others work too)
 - Local commands for other apps on the phone: `GET http://127.0.0.1:8765/drive?t=0.5&s=0&ms=1000`, `/stop`, `/status`
+
+## Controller (PlayStation names; Xbox: A, B, X, Y, LB, RB, LT, RT, View, Menu)
+
+- **Drive:** R2 forward, L2 reverse, left stick steers (right stick up/down also throttles), hold ✕ to brake
+- **D-pad:** up/down speed gear (MAX too once unlocked), left/right turn gear
+- **□** photo, **△** record, **L1 / R1** circle left / right, **○** stop (same as the Stop button)
+- **Options:** settings. D-pad up/down picks a row, left/right changes it, ✕ presses it, ○ closes.
+  The sticks still drive here, so trim and extra lock can be set on the move.
+- **Share:** photos and videos. D-pad moves, ✕ opens (and plays/pauses a video), left/right next/previous,
+  □ shares, △ deletes (twice to confirm), ○ back
+- **Press the left stick:** whole picture / fill screen. **Press the right stick:** zoom 1×, 1.5×, 2×, 3×
+- The controller buzzes at 4:00 (about a minute of battery left) and when the car drops out.
+- If the controller disconnects mid-drive the car stops.
 
 **How it was decoded, which toy it is for, and how to adapt it to yours:** [docs/HOW-IT-WAS-DECODED.md](docs/HOW-IT-WAS-DECODED.md)
 

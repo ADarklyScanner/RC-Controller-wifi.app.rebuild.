@@ -12,7 +12,11 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.hardware.input.InputManager
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -52,6 +56,7 @@ class MainActivity : Activity() {
     private val buttons = DoubleArray(17)
     private val axes = DoubleArray(4)
     @Volatile private var padSeen = false
+    @Volatile private var padId = -1
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +98,7 @@ class MainActivity : Activity() {
         hideBars()
 
         web.loadUrl("http://127.0.0.1:${LocalServer.PORT}/")
+        getSystemService(InputManager::class.java)?.registerInputDeviceListener(padWatch, null)
     }
 
     /** The car's Wi-Fi has no internet, so Android would rather use mobile data. Send our traffic over Wi-Fi. */
@@ -118,10 +124,11 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) hideBars() }
 
-    override fun onPause() { super.onPause(); car.stop() }
+    override fun onPause() { super.onPause(); car.stop(); padReset() }
 
     override fun onDestroy() {
         car.stop(); car.shutdown(); video.shutdown(); server.shutdown()
+        try { getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(padWatch) } catch (_: Exception) {}
         wifiCallback?.let { try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
         web.destroy()
         super.onDestroy()
@@ -170,16 +177,16 @@ class MainActivity : Activity() {
         (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
     private fun buttonIndex(code: Int) = when (code) {
-        KeyEvent.KEYCODE_BUTTON_A -> 0        // Cross
-        KeyEvent.KEYCODE_BUTTON_B -> 1        // Circle
-        KeyEvent.KEYCODE_BUTTON_X -> 2        // Square
-        KeyEvent.KEYCODE_BUTTON_Y -> 3        // Triangle
+        KeyEvent.KEYCODE_BUTTON_A -> 0        // Cross (Xbox A)
+        KeyEvent.KEYCODE_BUTTON_B -> 1        // Circle (Xbox B)
+        KeyEvent.KEYCODE_BUTTON_X -> 2        // Square (Xbox X)
+        KeyEvent.KEYCODE_BUTTON_Y -> 3        // Triangle (Xbox Y)
         KeyEvent.KEYCODE_BUTTON_L1 -> 4
         KeyEvent.KEYCODE_BUTTON_R1 -> 5
         KeyEvent.KEYCODE_BUTTON_L2 -> 6
         KeyEvent.KEYCODE_BUTTON_R2 -> 7
-        KeyEvent.KEYCODE_BUTTON_SELECT -> 8
-        KeyEvent.KEYCODE_BUTTON_START -> 9
+        KeyEvent.KEYCODE_BUTTON_SELECT -> 8   // Share (Xbox View)
+        KeyEvent.KEYCODE_BUTTON_START -> 9    // Options (Xbox Menu)
         KeyEvent.KEYCODE_BUTTON_THUMBL -> 10
         KeyEvent.KEYCODE_BUTTON_THUMBR -> 11
         KeyEvent.KEYCODE_DPAD_UP -> 12
@@ -190,28 +197,44 @@ class MainActivity : Activity() {
         else -> -1
     }
 
+    /** Forget everything held: a controller that drops out sends no "let go", and the car must not keep going. */
+    private fun padReset() { buttons.fill(0.0); axes.fill(0.0); padSeen = false; padId = -1 }
+
+    private val padWatch = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(id: Int) {}
+        override fun onInputDeviceChanged(id: Int) {}
+        override fun onInputDeviceRemoved(id: Int) { if (id == padId || !padConnected()) padReset() }
+    }
+
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (isPad(e.source)) {
             val i = buttonIndex(e.keyCode)
             if (i >= 0) {
-                padSeen = true
+                padSeen = true; padId = e.deviceId
                 if (e.action == KeyEvent.ACTION_DOWN) buttons[i] = 1.0 else if (e.action == KeyEvent.ACTION_UP) buttons[i] = 0.0
-                return true                                  // keep Circle from acting as Back
+                return true                                  // keep Circle from acting as Back, and the D-pad from moving focus
             }
         }
         return super.dispatchKeyEvent(e)
     }
 
+    /** Most pads put the right stick on Z / RZ (PlayStation, Xbox); some on RX / RY. */
+    private fun hasAxis(d: InputDevice?, axis: Int) = d?.getMotionRange(axis, InputDevice.SOURCE_JOYSTICK) != null
+
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
         if (isPad(e.source) && e.action == MotionEvent.ACTION_MOVE) {
-            padSeen = true
+            padSeen = true; padId = e.deviceId
+            val d = e.device
+            val zr = hasAxis(d, MotionEvent.AXIS_Z) || !hasAxis(d, MotionEvent.AXIS_RX)
             axes[0] = e.getAxisValue(MotionEvent.AXIS_X).toDouble()
             axes[1] = e.getAxisValue(MotionEvent.AXIS_Y).toDouble()
-            axes[2] = e.getAxisValue(MotionEvent.AXIS_Z).toDouble()
-            axes[3] = e.getAxisValue(MotionEvent.AXIS_RZ).toDouble()
-            val l2 = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
-            val r2 = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
-            buttons[6] = l2.toDouble(); buttons[7] = r2.toDouble()
+            axes[2] = e.getAxisValue(if (zr) MotionEvent.AXIS_Z else MotionEvent.AXIS_RX).toDouble()
+            axes[3] = e.getAxisValue(if (zr) MotionEvent.AXIS_RZ else MotionEvent.AXIS_RY).toDouble()
+            // analog triggers, only on pads that have them (on the others L2 / R2 arrive as buttons, above)
+            if (hasAxis(d, MotionEvent.AXIS_LTRIGGER) || hasAxis(d, MotionEvent.AXIS_BRAKE))
+                buttons[6] = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)).toDouble()
+            if (hasAxis(d, MotionEvent.AXIS_RTRIGGER) || hasAxis(d, MotionEvent.AXIS_GAS))
+                buttons[7] = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS)).toDouble()
             val hx = e.getAxisValue(MotionEvent.AXIS_HAT_X); val hy = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
             if (hx != 0f || hy != 0f || buttons[12] + buttons[13] + buttons[14] + buttons[15] > 0) {
                 buttons[14] = if (hx < -0.5f) 1.0 else 0.0; buttons[15] = if (hx > 0.5f) 1.0 else 0.0
@@ -230,6 +253,18 @@ class MainActivity : Activity() {
         return false
     }
 
+    /** A buzz in his hands, where the controller can (PlayStation 4 and Xbox pads mostly can). */
+    @Suppress("DEPRECATION")
+    private fun padBuzz(ms: Long, strength: Double) {
+        val d = InputDevice.getDevice(padId) ?: return
+        try {
+            val v: Vibrator = if (Build.VERSION.SDK_INT >= 31) d.vibratorManager.defaultVibrator else d.vibrator
+            if (!v.hasVibrator()) return
+            val amp = if (v.hasAmplitudeControl()) (strength.coerceIn(0.05, 1.0) * 255).toInt() else VibrationEffect.DEFAULT_AMPLITUDE
+            v.vibrate(VibrationEffect.createOneShot(ms.coerceIn(20L, 2000L), amp))
+        } catch (_: Exception) {}
+    }
+
     // ---------------------------------------------------------------- what the page can call
     inner class Bridge {
         @JavascriptInterface
@@ -244,6 +279,9 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun share(name: String) { runOnUiThread { try { media.share(name) } catch (_: Exception) {} } }
+
+        @JavascriptInterface
+        fun buzz(ms: Int, strength: Double) = padBuzz(ms.toLong(), strength)
 
         /** Same shape as the browser's Gamepad object, or "null" with no controller. */
         @JavascriptInterface

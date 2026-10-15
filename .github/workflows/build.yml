@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main]
+  pull_request:          # build only, to check it compiles; nothing is released
   workflow_dispatch:
 
 permissions:
@@ -49,11 +50,13 @@ jobs:
           path: FPV-Car.apk
 
       - name: Replace the previous release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release delete latest --cleanup-tag -y -R "${{ github.repository }}" || true
 
       - name: Publish as the latest download
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
