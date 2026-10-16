@@ -82,6 +82,7 @@ class LocalServer(
             "/", "/pad" -> asset(out, "page.html", "text/html; charset=utf-8")
             "/font-400.ttf", "/font-700.ttf" -> asset(out, path.removePrefix("/"), "font/ttf")
             "/icon-192.png" -> asset(out, "icon-192.png", "image/png")
+            "/app.js" -> asset(out, "app.js", "text/javascript; charset=utf-8")
             "/drive" -> {
                 val ms = d(q, "ms", 1000.0).coerceAtMost(10000.0)
                 car.set(d(q, "t"), d(q, "s"), ms / 1000.0, q["oc"] == "1"); text(out, "ok")
@@ -108,8 +109,12 @@ class LocalServer(
     }
 
     private fun asset(out: OutputStream, name: String, type: String) {
-        val bytes = try { ctx.assets.open(name).use { it.readBytes() } } catch (e: Exception) { null }
-        if (bytes == null) status(out, 404, "text/plain", "not found".toByteArray()) else status(out, 200, type, bytes, cache = name != "page.html")
+        var bytes = try { ctx.assets.open(name).use { it.readBytes() } } catch (e: Exception) { null }
+        // the app's own additions (app.js) go after the shared screen, so the Termux / Chrome page stays the same
+        if (bytes != null && name == "page.html")
+            bytes = String(bytes, Charsets.UTF_8).replace("</body>", "<script src=/app.js></script></body>").toByteArray()
+        if (bytes == null) status(out, 404, "text/plain", "not found".toByteArray())
+        else status(out, 200, type, bytes, cache = name != "page.html" && name != "app.js")
     }
 
     private fun text(out: OutputStream, s: String) = status(out, 200, "text/plain", s.toByteArray())
