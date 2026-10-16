@@ -2,7 +2,7 @@
 // Chrome page stay exactly as they are. It runs after the page's own script and uses its names (cfg, touch, orbit...).
 // Adds: tap-anywhere driving, a rebuilt one-thumb stick, a reverse speed limit with a gentle start, and drift mode.
 (()=>{
-const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dgain:1.4};
+const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1};
 let A={...AD};try{Object.assign(A,JSON.parse(localStorage.carapp||'{}'))}catch(e){}
 A.drift=0;   // drift mode is off every time the app opens
 const aSave=()=>{try{const k={...A};delete k.drift;localStorage.carapp=JSON.stringify(k)}catch(e){}};
@@ -54,16 +54,25 @@ addEventListener('pointermove',pmove);addEventListener('pointerup',pup);addEvent
 // ---------- reverse limit and drift mode, applied to every drive message the screen sends ----------
 // Reverse: this car reverses faster than it goes forward, so reverse is scaled down (Reverse speed), and with
 // Gentle start it begins at about a third of that and builds to it over 1.2 s.
-// Drift: throttle is either light or full (nothing in between), and steering is stronger and not reduced at speed.
-let revAt=0;
+// Drift: throttle is either light or full (Drift full power, which can be lowered so slick tyres don't just spin),
+// and steering is stronger and not reduced at speed. Two helpers for turn-in, both settings:
+//  snap: a sudden turn goes to full lock for a moment (Drift steering snap, ms), so the nose comes round fast;
+//  flick: reaching full lock with full throttle cuts the throttle for one message (0.1 s), like a lift-off flick.
+let revAt=0,prevS=0,snapUntil=0,snapDir=0,flickUntil=0,flicked=0;
 function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s=+q.get('s')||0;const oc=q.get('oc')==='1',now=Date.now();
  if(A.drift&&!orbit){const g=oc?1:cfg.sg/3,d=1-cfg.ssr*Math.abs(t)*(oc?1:76/127),raw=t/g,a=Math.abs(raw);
   const s0=d>.05?s/d:s;   // put back the steering the screen took away at speed
-  t=(raw<0?-1:1)*(a<.12?0:a<A.dfull?A.dlow:1)*g;s=clamp(s0*A.dgain)}
+  const full=a>=A.dfull;t=(raw<0?-1:1)*(a<.12?0:full?A.dmax:A.dlow)*g;s=clamp(s0*A.dgain);
+  if(A.dsnap&&Math.abs(s)>=.5&&Math.abs(prevS)<.3){snapUntil=now+A.dsnap;snapDir=s<0?-1:1}
+  if(now<snapUntil&&(s<0?-1:1)===snapDir&&Math.abs(s)>.2)s=snapDir;else snapUntil=0;
+  if(Math.abs(s)<.3)flicked=0;   // one flick per turn
+  if(A.dflick&&!flicked&&full&&t>0&&Math.abs(s)>=.95){flicked=1;flickUntil=now+80}
+  if(now<flickUntil)t=0;
+  prevS=s}else prevS=0
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0)u=shape(u);else if(u.indexOf('/stop')===0)revAt=0}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0)u=shape(u);else if(u.indexOf('/stop')===0)revAt=prevS=snapUntil=flickUntil=flicked=0}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';
@@ -71,7 +80,7 @@ $('#side').insertBefore(db,$('#side').firstChild);
 db.onclick=()=>{A.drift=A.drift?0:1;db.classList.toggle('on',!!A.drift);toast(A.drift?'Drift mode on':'Drift mode off')};
 
 // ---------- settings ----------
-const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dgain:v=>(+v).toFixed(1)+'×'};
+const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×'};
 const seg=(id)=>'<div class=seg id='+id+'><button data-v=0>Off</button><button data-v=1>On</button></div>';
 const rng=(id,lo,hi,step)=>'<input type=range id='+id+' min='+lo+' max='+hi+' step='+step+'><output></output>';
 const row=(label,inner)=>'<div class=row><label>'+label+'</label>'+inner+'</div>';
@@ -82,9 +91,10 @@ $('#trim').closest('.row').insertAdjacentHTML('afterend','<div class=sep></div><
  '<p class=info>One-thumb stick: no steering inside this angle either side of straight, then it builds gently to full lock at 90°.</p>'+
  row('Reverse speed',rng('a_rev',.25,1,.05))+row('Gentle reverse start',seg('a_soft'))+
  '<p class=info>100% and Off is the old reverse. Gentle start begins slow and builds up over about a second.</p>'+
- row('Drift light throttle',rng('a_dlow',.05,.5,.05))+row('Drift full throttle past',rng('a_dfull',.4,.95,.05))+row('Drift steering',rng('a_dgain',1,2,.1))+
- '<p class=info>Drift mode (the D button): throttle is light or full, nothing between, and steering is stronger. It is off each time the app opens.</p>');
-const RN=['win','rev','dlow','dfull','dgain'],SG=['tap','soft'];
+ row('Drift light throttle',rng('a_dlow',.05,.5,.05))+row('Drift full throttle past',rng('a_dfull',.4,.95,.05))+row('Drift full power',rng('a_dmax',.3,1,.05))+row('Drift steering',rng('a_dgain',1,2,.1))+
+ row('Drift steering snap',rng('a_dsnap',0,400,50))+row('Drift flick on turn-in',seg('a_dflick'))+
+ '<p class=info>Drift mode (the D button): throttle is light or full, nothing between, and steering is stronger. Full power can be lowered for slick tyres. Snap: a quick turn goes to full lock for a moment. Flick: full lock at full throttle cuts power for 0.1 s to kick the back out. Drift mode is off each time the app opens.</p>');
+const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap'],SG=['tap','soft','dflick'];
 function aApply(){document.body.classList.toggle('tapany',!!A.tap);db.classList.toggle('on',!!A.drift);
  for(const k of RN){const i=$('#a_'+k);i.value=A[k];i.nextElementSibling.textContent=fmtA[k](A[k])}
  for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.classList.toggle('sel',+b.dataset.v===+A[k]))}
