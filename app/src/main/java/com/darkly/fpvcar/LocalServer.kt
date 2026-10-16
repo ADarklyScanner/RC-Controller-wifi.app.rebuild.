@@ -93,7 +93,7 @@ class LocalServer(
                 if (q.containsKey("slot")) car.setExtra(d(q, "slot").toInt(), d(q, "v").toInt()) else car.clearExtra()
                 text(out, "ok")
             }
-            "/status" -> json(out, JSONObject().put("video", video.live).put("recording", video.recording).put("app", true).toString())
+            "/status" -> json(out, JSONObject().put("video", video.live).put("busy", video.busy).put("recording", video.recording).put("app", true).toString())
             "/record" -> {
                 val name = video.record(q["on"] != "0")
                 json(out, JSONObject().put("recording", video.recording).put("file", name ?: JSONObject.NULL).toString())

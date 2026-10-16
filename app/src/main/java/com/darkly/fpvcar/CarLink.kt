@@ -46,6 +46,7 @@ class CarLink(private val ip: String = CAR_IP) {
     @Volatile private var extra: IntArray? = null
     @Volatile private var extraUntil = 0L
     @Volatile private var running = false
+    @Volatile private var gen = 0                // a restart retires the old loop
     private var thread: Thread? = null
 
     /** throttle/steer -1..1; seconds <= 0 holds until changed. */
@@ -73,15 +74,17 @@ class CarLink(private val ip: String = CAR_IP) {
     fun start() {
         if (running) return
         running = true
-        thread = Thread({ loop() }, "car-control").apply { isDaemon = true; start() }
+        val my = ++gen
+        thread = Thread({ loop(my) }, "car-control").apply { isDaemon = true; start() }
     }
 
-    fun shutdown() { running = false }
+    /** Stop sending altogether (the app is in the background), so the Termux version or Nessari can drive. */
+    fun shutdown() { stop(); running = false; gen++ }
 
-    private fun loop() {
+    private fun loop(my: Int) {
         val addr = InetAddress.getByName(ip)
         var sock: DatagramSocket? = null
-        while (running) {
+        while (running && my == gen) {
             try {
                 if (sock == null) sock = DatagramSocket()
                 val now = System.currentTimeMillis()

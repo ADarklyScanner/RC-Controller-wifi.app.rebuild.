@@ -370,7 +370,7 @@ function toggleRec(){if($('#rec').style.display!=='grid')return;
   clearInterval(recTimer);
   if(recOn){recT0=Date.now();const r=$('#rec').getBoundingClientRect();$('#rtime').style.top=(r.top+r.height/2-8)+'px';$('#rtime').textContent='0:00';
    recTimer=setInterval(()=>{const s=(Date.now()-recT0)/1000|0;$('#rtime').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0')},500)}
-  else if(j.file)toast(cfg.stamp?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
+  else if(j.file)toast(cfg.stamp&&!APP?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
 $('#rec').onclick=toggleRec;
 
 // ---------- gallery: everything the car has saved on this phone ----------
@@ -403,18 +403,22 @@ function goFull(){const d=document.documentElement;
 if(!APP){if(standalone)lock();else addEventListener('pointerdown',goFull,{once:true,capture:true});
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{})}
 let everLive=false,downAt=0;
-function carState(live){
+function carState(live,busy){
  if(live&&APP&&$('#photo').style.display!=='grid')showLive();
  if(live){everLive=true;miss=0;if(downAt){downAt=0;$('#lost').classList.remove('on');document.body.classList.remove('down')}return}
  if(++miss<2)return;                                   // ~2 s without a frame
  if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});if(everLive)padBuzz(900,1);
   conn0=null;$('#ctime').classList.remove('on','late')}
- if(everLive){$('#lostT').textContent='Car disconnected';
-  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'}
+ if(busy){$('#lostT').textContent='Another controller has the car';
+  $('#lostS').textContent=(APP?'The Termux version (fpv_car.py serve) or Nessari’s drive screen is holding the picture. Close that page, or stop the script with Ctrl+C,':'The FPV Car app or Nessari’s drive screen is holding the picture. Close it (swipe the app away)')+' and the picture comes here by itself.'}
+ else if(everLive){$('#lostT').textContent='Car disconnected';
+  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'+(APP?'':' If it stays like this, turn mobile data off.')}
+ else{$('#lostT').textContent='Waiting for the car';
+  $('#lostS').textContent='Turn the car on and connect this phone to its Wi-Fi. The picture comes up by itself.'+(APP?'':' Turn mobile data off while you drive: with it on, the phone sends the car’s messages over mobile data and they never arrive.')}
  $('#lost').classList.add('on');document.body.classList.add('down')}
 let polls=0;
 setInterval(()=>fetch('/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{$('#off').classList.remove('on');
- if(++polls%3===0)sendTrim();carState(!!j.video)})
- .catch(()=>{$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
+ if(++polls%3===0)sendTrim();carState(!!j.video,!!j.busy)})
+ .catch(()=>{if(!APP)$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
 apply();sendTrim();
 </script></body></html>

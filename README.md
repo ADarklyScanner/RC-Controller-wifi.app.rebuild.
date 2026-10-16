@@ -15,6 +15,11 @@ Both share one screen (the app copies it from the Termux script at build time, `
 - Live 720p video (hardware decoded), photos and recordings saved to the phone's Gallery, optional date stamp
 - Gallery with share and delete, connected timer (gold at 4:00, the battery lasts about five minutes),
   "Car disconnected" notice, PlayStation controller support (any Bluetooth gamepad: Xbox, 8BitDo and others work too)
+- Shares the car politely: only one program on the phone can have the camera, so the app lets go of the car and
+  the picture when it goes to the background, and the Termux version does the same when no controller page has been
+  open for 5 seconds. Whichever is open (the app, the page in Chrome, or Nessari's drive screen) gets the car, and the
+  screen says so when another one is holding the picture. In Chrome, turn mobile data off while driving (the app
+  doesn't need this).
 - Local commands for other apps on the phone: `GET http://127.0.0.1:8765/drive?t=0.5&s=0&ms=1000`, `/stop`, `/status`
 
 ## Controller (PlayStation names; Xbox: A, B, X, Y, LB, RB, LT, RT, View, Menu)

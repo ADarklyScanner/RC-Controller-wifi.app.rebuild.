@@ -74,6 +74,7 @@ class Car:
         self.until = 0.0            # auto-stop time; 0 = hold until changed
         self.lock = threading.Lock()
         self.running = False
+        self.quiet = None           # serve: a function that says nobody is using the car from here
 
     def hello(self):
         ok = False
@@ -103,6 +104,10 @@ class Car:
                     self.extra = self._base(side)
                 pkt = packet(to_byte(self.steer, STEER_LIMIT),
                              to_byte(self.thr, OC_LIMIT if self.oc else self.limit), self.extra)
+                idle = not self.thr and not self.steer
+            if idle and self.quiet and self.quiet():
+                # no page open and standing still: say nothing, so the app or Nessari can drive the car
+                time.sleep(RATE); continue
             try:
                 self.sock.sendto(pkt, (self.ip, CTRL_PORT))
             except OSError:
@@ -168,6 +173,8 @@ class Video:
         import os
         self.ip, self.port = ip, port
         self.subs = []                  # one queue per open video page
+        self.sock = None
+        self.quiet = None               # serve: a function that says nobody is using the car from here
         self.lock = threading.Lock()
         self.last_frame = 0.0
         self.rec_file = self.rec_path = None
@@ -182,11 +189,38 @@ class Video:
         self.rec_dir = d if os.path.isdir(d) else os.path.expanduser("~")
 
     def start(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
-        self.sock.bind(("0.0.0.0", self.port))      # fails if another copy is already running
-        threading.Thread(target=self._recv, daemon=True).start()
+        threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._keepalive, daemon=True).start()
+
+    def _idle(self):
+        return bool(self.quiet and self.quiet() and not self.rec_file)
+
+    def _run(self):
+        """Holds the camera's port only while the controller page is open. Only one program on the
+        phone can have it; if the FPV Car app or Nessari has it, wait until they let go."""
+        told = False
+        while True:
+            if self._idle():
+                time.sleep(0.5); continue
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
+                s.bind(("0.0.0.0", self.port))
+            except OSError:
+                s.close()
+                if not told:
+                    told = True
+                    print("camera: port 1234 is busy (the FPV Car app or Nessari has the picture). "
+                          "Close the app (swipe it away) or Nessari's drive screen; the picture comes here by itself.")
+                time.sleep(2); continue
+            if told: print("camera: got the picture")
+            told = False
+            s.settimeout(1.0); self.sock = s
+            with self.lock:
+                for q in self.subs: q.need_key = True
+            try: self._recv(s)
+            finally:
+                self.sock = None; s.close()
 
     def _keepalive(self):
         # the app repeats its hello every few seconds; do the same so the stream keeps coming
@@ -195,7 +229,7 @@ class Video:
         except OSError: pass
         s.settimeout(0.3)
         while True:
-            for p in HELLO:
+            for p in HELLO if not self._idle() else ():
                 try: s.sendto(p, (self.ip, HELLO_PORT)); s.recvfrom(64)
                 except OSError: pass
             time.sleep(3)
@@ -209,13 +243,14 @@ class Video:
             if buf[i + 4] & 31 in (5, 7): return True
             i += 4
 
-    def _recv(self):
+    def _recv(self, sock):
         import struct
         frames, newest = {}, 0
         need_key = True                # after any lost frame, wait for the next keyframe
-        while True:
-            try: data = self.sock.recv(2048)
-            except OSError: continue
+        while not self._idle():
+            try: data = sock.recv(2048)
+            except socket.timeout: continue
+            except OSError: return
             if len(data) < 32 or data[:4] != self.MAGIC: continue
             size, fno, _ts, _z, count, _idx, off, ln = struct.unpack("<IIIIHHII", data[4:32])
             f = frames.setdefault(fno, [size, count, {}])
@@ -759,7 +794,7 @@ function toggleRec(){if($('#rec').style.display!=='grid')return;
   clearInterval(recTimer);
   if(recOn){recT0=Date.now();const r=$('#rec').getBoundingClientRect();$('#rtime').style.top=(r.top+r.height/2-8)+'px';$('#rtime').textContent='0:00';
    recTimer=setInterval(()=>{const s=(Date.now()-recT0)/1000|0;$('#rtime').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0')},500)}
-  else if(j.file)toast(cfg.stamp?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
+  else if(j.file)toast(cfg.stamp&&!APP?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
 $('#rec').onclick=toggleRec;
 
 // ---------- gallery: everything the car has saved on this phone ----------
@@ -792,19 +827,23 @@ function goFull(){const d=document.documentElement;
 if(!APP){if(standalone)lock();else addEventListener('pointerdown',goFull,{once:true,capture:true});
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{})}
 let everLive=false,downAt=0;
-function carState(live){
+function carState(live,busy){
  if(live&&APP&&$('#photo').style.display!=='grid')showLive();
  if(live){everLive=true;miss=0;if(downAt){downAt=0;$('#lost').classList.remove('on');document.body.classList.remove('down')}return}
  if(++miss<2)return;                                   // ~2 s without a frame
  if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});if(everLive)padBuzz(900,1);
   conn0=null;$('#ctime').classList.remove('on','late')}
- if(everLive){$('#lostT').textContent='Car disconnected';
-  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'}
+ if(busy){$('#lostT').textContent='Another controller has the car';
+  $('#lostS').textContent=(APP?'The Termux version (fpv_car.py serve) or Nessari’s drive screen is holding the picture. Close that page, or stop the script with Ctrl+C,':'The FPV Car app or Nessari’s drive screen is holding the picture. Close it (swipe the app away)')+' and the picture comes here by itself.'}
+ else if(everLive){$('#lostT').textContent='Car disconnected';
+  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'+(APP?'':' If it stays like this, turn mobile data off.')}
+ else{$('#lostT').textContent='Waiting for the car';
+  $('#lostS').textContent='Turn the car on and connect this phone to its Wi-Fi. The picture comes up by itself.'+(APP?'':' Turn mobile data off while you drive: with it on, the phone sends the car’s messages over mobile data and they never arrive.')}
  $('#lost').classList.add('on');document.body.classList.add('down')}
 let polls=0;
 setInterval(()=>fetch('/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{$('#off').classList.remove('on');
- if(++polls%3===0)sendTrim();carState(!!j.video)})
- .catch(()=>{$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
+ if(++polls%3===0)sendTrim();carState(!!j.video,!!j.busy)})
+ .catch(()=>{if(!APP)$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
 apply();sendTrim();
 </script></body></html>"""
 
@@ -831,8 +870,11 @@ def cmd_serve(c, port=8765):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import urlparse, parse_qs
     vid = Video(c.ip)
-    try: vid.start()
-    except OSError as e: print("video off:", e); vid = None
+    # quiet when no controller page (or other app) has asked anything for a few seconds: the open page
+    # asks every second, so a forgotten script never fights the FPV Car app or Nessari for the car
+    seen = [time.time()]
+    c.quiet = vid.quiet = lambda: time.time() - seen[0] > 5
+    vid.start()
 
     import os, re
     def media_dirs():
@@ -877,6 +919,7 @@ def cmd_serve(c, port=8765):
             self.wfile.write(body.encode() if isinstance(body, str) else body)
 
         def do_GET(self):
+            seen[0] = time.time()
             u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path in ("/", "/pad"):
                 return self.reply(JOYSTICK_PAGE, "text/html")
@@ -908,7 +951,7 @@ def cmd_serve(c, port=8765):
                 else: c.clear_extra()
                 return self.reply("ok")
             if u.path == "/status":
-                return self.reply(json.dumps({"video": bool(vid and vid.live),
+                return self.reply(json.dumps({"video": bool(vid and vid.live), "busy": vid.sock is None,
                                               "recording": bool(vid and vid.rec_file)}), "application/json")
             if u.path == "/media/list":
                 items = []
@@ -992,7 +1035,12 @@ def cmd_serve(c, port=8765):
 
         def log_message(self, *a): pass
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H); srv.daemon_threads = True
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), H); srv.daemon_threads = True
+    except OSError:
+        print(f"port {port} is busy: the FPV Car app (or another copy of this script) is open.\n"
+              "Close the app (swipe it away from recent apps), then run this again.")
+        return
     print(f"controller: http://127.0.0.1:{port}")
     try:
         srv.serve_forever()
