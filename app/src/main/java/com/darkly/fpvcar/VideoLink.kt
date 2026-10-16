@@ -39,6 +39,7 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
     }
 
     @Volatile var lastFrame = 0L
+    @Volatile var frames = 0L                    // pictures received, for Test mode's speed check
     @Volatile var busy = false                   // another controller (Termux, Nessari) holds port 1234
     @Volatile private var running = false
     @Volatile private var gen = 0                // a restart retires the old threads
@@ -195,6 +196,7 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
 
     private fun onFrame(frame: ByteArray, key: Boolean) {
         lastFrame = System.currentTimeMillis()
+        frames++
         val ptsUs = (System.nanoTime() - t0) / 1000
         decode(frame, key, ptsUs)
         writeRecording(frame, key, ptsUs)

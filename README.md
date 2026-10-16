@@ -32,6 +32,10 @@ in the Termux version or the Chrome page (Settings > App):
 - **Stick straight zone**: no steering within this angle of straight; steering then builds gently to full lock at 90°.
 - **Reverse speed** and **Gentle reverse start**: the car reverses faster than it goes forward, so reverse is scaled
   down and builds up over about a second. 100% and Off is the old behaviour.
+- Settings fold into groups (Picture, Controls, Driving, Drift, Controller). **Test mode** (bottom of Settings) holds the
+  slot tests, a speed check (screen refresh, touch reports, updates and messages to the car, camera pictures per second),
+  a choice of screen updates (10 to 50 a second) and messages to the car (20, the stock app, to 100 a second), a steering
+  speed test and a slot B / C test with the motor running.
 - **Drift mode** (D button): throttle is light or full (full power can be lowered for slick tyres), nothing between;
   steering is stronger and not reduced at speed. Steering snap: a quick turn goes to full lock for a moment.
   Flick: reaching full lock at full throttle cuts power for one message (0.1 s), once per turn.

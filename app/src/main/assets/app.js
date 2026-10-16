@@ -2,7 +2,7 @@
 // Chrome page stay exactly as they are. It runs after the page's own script and uses its names (cfg, touch, orbit...).
 // Adds: tap-anywhere driving, a rebuilt one-thumb stick, a reverse speed limit with a gentle start, and drift mode.
 (()=>{
-const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1};
+const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20};
 let A={...AD};try{Object.assign(A,JSON.parse(localStorage.carapp||'{}'))}catch(e){}
 A.drift=0;   // drift mode is off every time the app opens
 const aSave=()=>{try{const k={...A};delete k.drift;localStorage.carapp=JSON.stringify(k)}catch(e){}};
@@ -35,7 +35,7 @@ J.onpointerup=J.onpointercancel=()=>{jDown=false;touch.t=touch.s=null};
 // Two thumbs: left half is throttle (up / down), right half is steering (left / right). The distance for full
 // is half the length of the slider on screen, so the Size setting still sets it.
 // Stick L / Stick R: anywhere on that half is the stick, as big as the stick on screen.
-const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#off,#tpill';
+const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#tmode,#off,#tpill';
 const ptrs=new Map();
 document.addEventListener('pointerdown',e=>{if(!A.tap||e.target.closest(EXCL))return;
  const left=e.clientX<innerWidth/2;let role=null;
@@ -58,7 +58,7 @@ addEventListener('pointermove',pmove);addEventListener('pointerup',pup);addEvent
 // and steering is stronger and not reduced at speed. Two helpers for turn-in, both settings:
 //  snap: a sudden turn goes to full lock for a moment (Drift steering snap, ms), so the nose comes round fast;
 //  flick: reaching full lock with full throttle cuts the throttle for one message (0.1 s), like a lift-off flick.
-let revAt=0,prevS=0,snapUntil=0,snapDir=0,flickUntil=0,flicked=0;
+let drives=0,revAt=0,prevS=0,snapUntil=0,snapDir=0,flickUntil=0,flicked=0;
 function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s=+q.get('s')||0;const oc=q.get('oc')==='1',now=Date.now();
  if(A.drift&&!orbit){const g=oc?1:cfg.sg/3,d=1-cfg.ssr*Math.abs(t)*(oc?1:76/127),raw=t/g,a=Math.abs(raw);
   const s0=d>.05?s/d:s;   // put back the steering the screen took away at speed
@@ -72,38 +72,115 @@ function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0)u=shape(u);else if(u.indexOf('/stop')===0)revAt=prevS=snapUntil=flickUntil=flicked=0}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0)revAt=prevS=snapUntil=flickUntil=flicked=0}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';
 $('#side').insertBefore(db,$('#side').firstChild);
 db.onclick=()=>{A.drift=A.drift?0:1;db.classList.toggle('on',!!A.drift);toast(A.drift?'Drift mode on':'Drift mode off')};
 
-// ---------- settings ----------
-const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×'};
-const seg=(id)=>'<div class=seg id='+id+'><button data-v=0>Off</button><button data-v=1>On</button></div>';
+// ---------- settings: each group folds open on its own (one at a time) ----------
+st.textContent+='details.dd{border-bottom:1px solid var(--line)}details.dd>summary{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:13px 0;color:var(--text);font:700 14px var(--display);letter-spacing:.02em;cursor:pointer}'+
+ 'details.dd>summary::-webkit-details-marker{display:none}details.dd>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);transform:rotate(45deg);margin-right:4px;transition:transform .2s}'+
+ 'details.dd[open]>summary::after{transform:rotate(-135deg)}.ddb{padding:0 0 10px}#tmb{width:100%;justify-content:center;margin:14px 0 8px}'+
+ '#tmode{position:fixed;inset:0;background:var(--bg);z-index:8;display:none;flex-direction:column;touch-action:pan-y}#tmode.on{display:flex}#tmbody{overflow-y:auto;padding:0 16px 24px;width:100%;max-width:640px;margin:0 auto}'+
+ '#tmbody h3{margin:16px 0 8px;font-size:14px;color:var(--text);font-family:var(--display)}.go{width:100%;justify-content:center;margin:6px 0}.go.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}'+
+ '.meter{display:flex;justify-content:space-between;padding:5px 0;color:var(--text);font-size:13px}.meter b{font:700 14px var(--display);font-variant-numeric:tabular-nums;color:var(--acc)}';
+const sh=$('#sheet'),groups={};let body=null;
+for(const el of [...sh.children]){
+ if(el.id==='reset'){body=null;continue}
+ if(el.tagName==='H3'){const d=document.createElement('details');d.className='dd';d.innerHTML='<summary>'+el.textContent+'</summary><div class=ddb></div>';
+  el.replaceWith(d);body=d.lastChild;groups[el.textContent]=body;continue}
+ if(el.classList.contains('sep')){el.remove();continue}
+ if(body)body.appendChild(el)}
+const seg=(id,opts)=>'<div class=seg id='+id+'>'+(opts||[[0,'Off'],[1,'On']]).map(o=>'<button data-v='+o[0]+'>'+o[1]+'</button>').join('')+'</div>';
 const rng=(id,lo,hi,step)=>'<input type=range id='+id+' min='+lo+' max='+hi+' step='+step+'><output></output>';
 const row=(label,inner)=>'<div class=row><label>'+label+'</label>'+inner+'</div>';
-$('#trim').closest('.row').insertAdjacentHTML('afterend','<div class=sep></div><h3>App</h3>'+
- row('Tap anywhere',seg('a_tap'))+
- '<p class=info>Press anywhere that is not a button and that spot becomes the centre. Two thumbs: left half throttle, right half steering. Stick: anywhere on the stick’s half. Moving half a slider’s length is full.</p>'+
- row('Stick straight zone',rng('a_win',5,45,1))+
- '<p class=info>One-thumb stick: no steering inside this angle either side of straight, then it builds gently to full lock at 90°.</p>'+
- row('Reverse speed',rng('a_rev',.25,1,.05))+row('Gentle reverse start',seg('a_soft'))+
- '<p class=info>100% and Off is the old reverse. Gentle start begins slow and builds up over about a second.</p>'+
- row('Drift light throttle',rng('a_dlow',.05,.5,.05))+row('Drift full throttle past',rng('a_dfull',.4,.95,.05))+row('Drift full power',rng('a_dmax',.3,1,.05))+row('Drift steering',rng('a_dgain',1,2,.1))+
- row('Drift steering snap',rng('a_dsnap',0,400,50))+row('Drift flick on turn-in',seg('a_dflick'))+
- '<p class=info>Drift mode (the D button): throttle is light or full, nothing between, and steering is stronger. Full power can be lowered for slick tyres. Snap: a quick turn goes to full lock for a moment. Flick: full lock at full throttle cuts power for 0.1 s to kick the back out. Drift mode is off each time the app opens.</p>');
-const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap'],SG=['tap','soft','dflick'];
+const info=t=>'<p class=info>'+t+'</p>';
+groups['Controls'].insertAdjacentHTML('beforeend',row('Tap anywhere',seg('a_tap'))+
+ info('Press anywhere that is not a button and that spot becomes the centre. Two thumbs: left half throttle, right half steering. Stick: anywhere on the stick’s half. Moving half a slider’s length is full.')+
+ row('Stick straight zone',rng('a_win',5,45,1))+info('One-thumb stick: no steering inside this angle either side of straight, then it builds gently to full lock at 90°.'));
+groups['Driving'].insertAdjacentHTML('beforeend',row('Reverse speed',rng('a_rev',.25,1,.05))+row('Gentle reverse start',seg('a_soft'))+
+ info('100% and Off is the old reverse. Gentle start begins slow and builds up over about a second.'));
+groups['Driving'].closest('details').insertAdjacentHTML('afterend','<details class=dd><summary>Drift</summary><div class=ddb>'+
+ row('Light throttle',rng('a_dlow',.05,.5,.05))+row('Full throttle past',rng('a_dfull',.4,.95,.05))+row('Full power',rng('a_dmax',.3,1,.05))+row('Steering',rng('a_dgain',1,2,.1))+
+ row('Steering snap',rng('a_dsnap',0,400,50))+row('Flick on turn-in',seg('a_dflick'))+
+ info('Drift mode (the D button): throttle is light or full, nothing between, and steering is stronger. Full power can be lowered for slick tyres. Snap: a quick turn goes to full lock for a moment. Flick: full lock at full throttle cuts power for 0.1 s to kick the back out. Drift mode is off each time the app opens.')+'</div></details>');
+// the old Tests group moves to Test mode
+const oldTests=groups['Tests'];
+// inside a .tests box so the controller's D-pad reaches it (the shared screen's list takes '#sheet .tests button')
+$('#reset').insertAdjacentHTML('beforebegin','<div class=tests style="display:block"><button class=pill id=tmb>Test mode</button></div>');
+document.querySelectorAll('#sheet details.dd').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)document.querySelectorAll('#sheet details.dd').forEach(o=>{if(o!==d)o.open=false})}));
+// controller navigation (D-pad) walks the rows; the group holding the picked row opens
+const fs0=fShow;fShow=function(){fs0();const el=document.querySelector('#sheet .gpf'),d=el&&el.closest('details');if(d&&!d.open){d.open=true;el.scrollIntoView({block:'nearest'})}};
+
+// ---------- test mode ----------
+document.body.insertAdjacentHTML('beforeend','<div id=tmode><div class=bar><h2>Test mode</h2><div style="display:flex;gap:8px"><button class=pill id=tmstop>Stop</button>'+
+ '<button class=ib id=tmx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div><div id=tmbody>'+
+ '<h3>Speed check</h3>'+
+ '<div class=meter><span>Screen refresh</span><b id=m_fps>–</b></div>'+
+ '<div class=meter><span>Touch reports (drag a finger here)</span><b id=m_touch>–</b></div>'+
+ '<div class=meter><span>Screen updates to the car</span><b id=m_upd>–</b></div>'+
+ '<div class=meter><span>Messages sent to the car</span><b id=m_sent>–</b></div>'+
+ '<div class=meter><span>Camera pictures</span><b id=m_cam>–</b></div>'+
+ info('Per second. Screen updates only count while you drive, so use a controller with this open to see them. Messages to the car go out all the time.')+
+ row('Screen updates',seg('a_urate',[[10,'10'],[20,'20'],[30,'30'],[50,'50']]))+
+ row('Messages to car',seg('a_crate',[[20,'20'],[30,'30'],[50,'50'],[100,'100']]))+
+ info('Per second. The stock app sends 20 messages a second. Try more and see whether the car answers any quicker; go back to 20 if it stutters or ignores some.')+
+ '<h3>Steering speed</h3>'+info('Wheels off the ground. Swings the steering full left and right, faster and faster (every 500 ms down to 40 ms). Watch for the point where the wheels stop reaching full lock: that is as fast as the car itself can steer.')+
+ '<button class="pill go" id=t_steer>Run steering speed test</button>'+
+ '<h3>Slot B or C with the motor running</h3>'+info('Wheels off the ground. Runs the motor at a steady throttle and steps the slot through its values, 2 s each (the value shows at the top of the screen). If the motor speed or sound changes with the value, that slot adjusts the throttle.')+
+ row('Slot',seg('a_tslot',[[1,'B'],[2,'C']]))+row('Throttle',rng('a_tthr',.1,.5,.05))+
+ '<button class="pill go" id=t_motor>Run motor test</button>'+
+ '<h3>Slots, one value at a time</h3><div id=tmold></div>'+
+ '<h3>Controller</h3><button class="pill go" id=t_pad>Test controller &amp; dead zones</button>'+
+ '</div></div>');
+while(oldTests.firstChild)$('#tmold').appendChild(oldTests.firstChild);oldTests.closest('details').remove();
+const tm=on=>{$('#tmode').classList.toggle('on',on);if(on){sheet(false);touch.t=touch.s=null;fetch('/stop').catch(()=>{})}};
+$('#tmb').onclick=()=>tm(true);$('#tmx').onclick=()=>tm(false);$('#tmstop').onclick=()=>$('#stop').onclick();
+$('#t_pad').onclick=()=>{tm(false);$('#ptb').onclick()};
+// starting a test closes the panel so the car, the camera and the value at the top can be watched
+document.querySelectorAll('#tmold .tests button,#mhold').forEach(b=>b.addEventListener('click',()=>tm(false)));
+const pill=t=>{$('#tpill span').textContent=t;$('#tpill').classList.add('on')};
+let tRun=null;
+function tEnd(){if(!tRun)return;clearTimeout(tRun.timer);tRun=null;fetch('/extra').catch(()=>{});f0('/stop').catch(()=>{});$('#tpill').classList.remove('on')}
+function tStart(){tEnd();endTest();mstop();setOrbit(0);tm(false);tRun={timer:0}}
+$('#t_steer').onclick=()=>{tStart();const P=[500,400,300,200,150,120,100,80,60,50,40];let i=0,side=1,at=Date.now();
+ const step=()=>{if(!tRun)return;if(Date.now()-at>2500){i++;at=Date.now()}
+  if(i>=P.length){tEnd();toast('Steering speed test done');return}
+  side=-side;pill('Steering swing every '+P[i]+' ms');f0('/drive?t=0&s='+side+'&ms=600').catch(()=>{});tRun.timer=setTimeout(step,P[i])};step()};
+$('#t_motor').onclick=()=>{tStart();const V=[0,1,2,4,8,16,32,64,128,192,255,0],sl=A.tslot||1,n='ABC'[sl];let i=0,held=0;
+ const step=()=>{if(!tRun)return;if(i>=V.length){tEnd();toast('Motor test done');return}
+  pill('Slot '+n+'  =  '+V[i]+'   throttle '+Math.round(A.tthr*100)+'%  ('+(i+1)+'/'+V.length+')');
+  f0('/extra?slot='+sl+'&v='+V[i]).catch(()=>{});f0('/drive?t='+A.tthr+'&s=0&ms=700').catch(()=>{});
+  if(++held>=4){held=0;i++}tRun.timer=setTimeout(step,500)};step()};
+const st0=$('#stop').onclick;$('#stop').onclick=()=>{tEnd();st0()};
+// meters, only while the panel is open
+let fpsN=0,touchN=0,last=null;
+(function raf(){fpsN++;requestAnimationFrame(raf)})();
+$('#tmode').addEventListener('pointermove',()=>touchN++);
+setInterval(()=>{const now=Date.now();
+ if(!$('#tmode').classList.contains('on')){last=null;fpsN=touchN=0;drives=0;return}
+ f0('/speed',{cache:'no-store'}).then(r=>r.json()).then(j=>{
+  if(last){const dt=(now-last.t)/1000;
+   $('#m_fps').textContent=Math.round(fpsN/dt);$('#m_touch').textContent=touchN?Math.round(touchN/dt):'–';
+   $('#m_upd').textContent=Math.round(drives/dt);$('#m_sent').textContent=Math.round((j.sent-last.sent)/dt);
+   $('#m_cam').textContent=Math.round((j.frames-last.frames)/dt)}
+  last={t:now,sent:j.sent,frames:j.frames};fpsN=touchN=drives=0}).catch(()=>{})},1000);
+
+// ---------- settings rows ----------
+A.tslot=A.tslot||1;A.tthr=A.tthr||.2;
+const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×',tthr:v=>Math.round(v*100)+'%'};
+const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot'];
+const sendRate=()=>f0('/rate?ms='+Math.round(1000/A.crate)).catch(()=>{});
 function aApply(){document.body.classList.toggle('tapany',!!A.tap);db.classList.toggle('on',!!A.drift);
  for(const k of RN){const i=$('#a_'+k);i.value=A[k];i.nextElementSibling.textContent=fmtA[k](A[k])}
  for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.classList.toggle('sel',+b.dataset.v===+A[k]))}
 for(const k of RN)$('#a_'+k).oninput=e=>{A[k]=+e.target.value;aApply();aSave()};
-for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.onclick=()=>{A[k]=+b.dataset.v;aApply();aSave()});
-const r0=$('#reset').onclick;$('#reset').onclick=()=>{r0();A={...AD,drift:A.drift};aApply();aSave()};
-aApply();
-// the shared screen updates the car 10 times a second; the app sends to the car 20 times a second (as the stock app),
-// so a second update half-way between makes the screen keep up with it: half the delay from thumb to car.
+for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.onclick=()=>{A[k]=+b.dataset.v;aApply();aSave();if(k==='crate')sendRate()});
+const r0=$('#reset').onclick;$('#reset').onclick=()=>{r0();A={...AD,drift:A.drift,tslot:A.tslot,tthr:A.tthr};aApply();aSave();sendRate()};
+aApply();sendRate();
+// the shared screen updates the car 10 times a second; extra updates in between bring it to Screen updates (default 20)
 let mine=false;const rp0=readPad;
-readPad=function(){if(!mine)setTimeout(()=>{mine=true;try{tick()}finally{mine=false}},50);return rp0()};
+readPad=function(){if(!mine){const n=Math.max(1,Math.round(A.urate/10));for(let k=1;k<n;k++)setTimeout(()=>{mine=true;try{tick()}finally{mine=false}},k*100/n)}return rp0()};
 })();
