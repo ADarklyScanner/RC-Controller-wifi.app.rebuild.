@@ -46,6 +46,8 @@ class CarLink(private val ip: String = CAR_IP) {
     @Volatile private var extra: IntArray? = null
     @Volatile private var extraUntil = 0L
     @Volatile private var running = false
+    @Volatile var periodMs = 50L             // time between messages; 50 = the stock app (Test mode can change it)
+    @Volatile var sent = 0L                  // messages sent, for Test mode's speed check
     @Volatile private var gen = 0                // a restart retires the old loop
     private var thread: Thread? = null
 
@@ -102,12 +104,13 @@ class CarLink(private val ip: String = CAR_IP) {
                 }
                 val p = packet(toByte(s, STEER_LIMIT), toByte(t, if (o) OC_LIMIT else LIMIT), slots[0], slots[1], slots[2])
                 sock.send(DatagramPacket(p, p.size, addr, CTRL_PORT))
+                sent++
             } catch (e: Exception) {
                 try { sock?.close() } catch (_: Exception) {}
                 sock = null
                 try { Thread.sleep(500) } catch (_: InterruptedException) {}
             }
-            try { Thread.sleep(50) } catch (_: InterruptedException) {}
+            try { Thread.sleep(periodMs) } catch (_: InterruptedException) {}
         }
         try { sock?.close() } catch (_: Exception) {}
     }
