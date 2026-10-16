@@ -102,4 +102,8 @@ for(const k of RN)$('#a_'+k).oninput=e=>{A[k]=+e.target.value;aApply();aSave()};
 for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.onclick=()=>{A[k]=+b.dataset.v;aApply();aSave()});
 const r0=$('#reset').onclick;$('#reset').onclick=()=>{r0();A={...AD,drift:A.drift};aApply();aSave()};
 aApply();
+// the shared screen updates the car 10 times a second; the app sends to the car 20 times a second (as the stock app),
+// so a second update half-way between makes the screen keep up with it: half the delay from thumb to car.
+let mine=false;const rp0=readPad;
+readPad=function(){if(!mine)setTimeout(()=>{mine=true;try{tick()}finally{mine=false}},50);return rp0()};
 })();
