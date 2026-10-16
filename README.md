@@ -22,6 +22,18 @@ Both share one screen (the app copies it from the Termux script at build time, `
   doesn't need this).
 - Local commands for other apps on the phone: `GET http://127.0.0.1:8765/drive?t=0.5&s=0&ms=1000`, `/stop`, `/status`
 
+## Android app only
+
+`app/src/main/assets/app.js` is added after the shared screen by the app's own server, so these are in the APK and not
+in the Termux version or the Chrome page (Settings > App):
+
+- **Tap anywhere**: the spot you press becomes the centre. Two thumbs: left half throttle, right half steering. Stick:
+  anywhere on the stick's half. Half a slider's length is full.
+- **Stick straight zone**: no steering within this angle of straight; steering then builds gently to full lock at 90°.
+- **Reverse speed** and **Gentle reverse start**: the car reverses faster than it goes forward, so reverse is scaled
+  down and builds up over about a second. 100% and Off is the old behaviour.
+- **Drift mode** (D button): throttle is light or full, nothing between; steering is stronger and not reduced at speed.
+
 ## Controller (PlayStation names; Xbox: A, B, X, Y, LB, RB, LT, RT, View, Menu)
 
 - **Drive:** R2 forward, L2 reverse, left stick steers (right stick up/down also throttles), hold ✕ to brake
