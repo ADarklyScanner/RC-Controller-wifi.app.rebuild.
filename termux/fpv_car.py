@@ -74,6 +74,7 @@ class Car:
         self.until = 0.0            # auto-stop time; 0 = hold until changed
         self.lock = threading.Lock()
         self.running = False
+        self.quiet = None           # serve: a function that says nobody is using the car from here
 
     def hello(self):
         ok = False
@@ -103,6 +104,10 @@ class Car:
                     self.extra = self._base(side)
                 pkt = packet(to_byte(self.steer, STEER_LIMIT),
                              to_byte(self.thr, OC_LIMIT if self.oc else self.limit), self.extra)
+                idle = not self.thr and not self.steer
+            if idle and self.quiet and self.quiet():
+                # no page open and standing still: say nothing, so the app or Nessari can drive the car
+                time.sleep(RATE); continue
             try:
                 self.sock.sendto(pkt, (self.ip, CTRL_PORT))
             except OSError:
@@ -168,6 +173,8 @@ class Video:
         import os
         self.ip, self.port = ip, port
         self.subs = []                  # one queue per open video page
+        self.sock = None
+        self.quiet = None               # serve: a function that says nobody is using the car from here
         self.lock = threading.Lock()
         self.last_frame = 0.0
         self.rec_file = self.rec_path = None
@@ -182,11 +189,38 @@ class Video:
         self.rec_dir = d if os.path.isdir(d) else os.path.expanduser("~")
 
     def start(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
-        self.sock.bind(("0.0.0.0", self.port))      # fails if another copy is already running
-        threading.Thread(target=self._recv, daemon=True).start()
+        threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._keepalive, daemon=True).start()
+
+    def _idle(self):
+        return bool(self.quiet and self.quiet() and not self.rec_file)
+
+    def _run(self):
+        """Holds the camera's port only while the controller page is open. Only one program on the
+        phone can have it; if the FPV Car app or Nessari has it, wait until they let go."""
+        told = False
+        while True:
+            if self._idle():
+                time.sleep(0.5); continue
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
+                s.bind(("0.0.0.0", self.port))
+            except OSError:
+                s.close()
+                if not told:
+                    told = True
+                    print("camera: port 1234 is busy (the FPV Car app or Nessari has the picture). "
+                          "Close the app (swipe it away) or Nessari's drive screen; the picture comes here by itself.")
+                time.sleep(2); continue
+            if told: print("camera: got the picture")
+            told = False
+            s.settimeout(1.0); self.sock = s
+            with self.lock:
+                for q in self.subs: q.need_key = True
+            try: self._recv(s)
+            finally:
+                self.sock = None; s.close()
 
     def _keepalive(self):
         # the app repeats its hello every few seconds; do the same so the stream keeps coming
@@ -195,7 +229,7 @@ class Video:
         except OSError: pass
         s.settimeout(0.3)
         while True:
-            for p in HELLO:
+            for p in HELLO if not self._idle() else ():
                 try: s.sendto(p, (self.ip, HELLO_PORT)); s.recvfrom(64)
                 except OSError: pass
             time.sleep(3)
@@ -209,13 +243,14 @@ class Video:
             if buf[i + 4] & 31 in (5, 7): return True
             i += 4
 
-    def _recv(self):
+    def _recv(self, sock):
         import struct
         frames, newest = {}, 0
         need_key = True                # after any lost frame, wait for the next keyframe
-        while True:
-            try: data = self.sock.recv(2048)
-            except OSError: continue
+        while not self._idle():
+            try: data = sock.recv(2048)
+            except socket.timeout: continue
+            except OSError: return
             if len(data) < 32 or data[:4] != self.MAGIC: continue
             size, fno, _ts, _z, count, _idx, off, ln = struct.unpack("<IIIIHHII", data[4:32])
             f = frames.setdefault(fno, [size, count, {}])
@@ -449,6 +484,15 @@ button{font:inherit;color:inherit;cursor:pointer}
 #reset{margin-top:14px;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:none;color:var(--dim)}
 @media (orientation:portrait){#gears{top:calc(64px*var(--sz))}#side{top:calc(120px*var(--sz))}#str{width:calc(100vw - 150px)}#stop{bottom:calc(140px*var(--sz));left:auto;right:22px;transform:none}}
 #gal{position:fixed;inset:0;background:var(--bg);z-index:6;display:none;flex-direction:column;touch-action:pan-y}#gal.on{display:flex}.bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;gap:10px}.bar h2{margin:0;font-size:17px;font-weight:700;color:var(--text);font-family:var(--display)}#grid{flex:1;overflow-y:auto;padding:0 16px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-content:start}.cell{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--bg2);border:0;padding:0}.cell img,.cell video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}.cell .dur{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;font-variant-numeric:tabular-nums}.cell .dur::before{content:"";border-left:7px solid #fff;border-top:4px solid transparent;border-bottom:4px solid transparent}#empty{color:var(--faint);grid-column:1/-1;text-align:center;padding:60px 0}#viewer{position:fixed;inset:0;background:#000;z-index:7;display:none;flex-direction:column}#viewer.on{display:flex}#vbody{flex:1;min-height:0;display:grid;place-items:center}#vbody img,#vbody video{max-width:100%;max-height:100%;object-fit:contain}.act{display:flex;gap:8px}.pill{height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line);background:var(--bg2);color:var(--text);display:flex;align-items:center;gap:6px}.pill.warn{border-color:var(--red);color:#16011e;background:var(--red)}
+#padt{position:fixed;inset:0;background:var(--bg);z-index:8;display:none;flex-direction:column;touch-action:pan-y}#padt.on{display:flex}
+#ptbody{flex:1;overflow-y:auto;padding:0 16px 20px;display:flex;flex-wrap:wrap;gap:16px 24px;align-content:start}
+.ptcol{display:flex;flex-direction:column;gap:8px;min-width:260px;flex:1}.ptsticks{display:flex;gap:14px;align-items:flex-end}
+.ptsticks div{text-align:center;color:var(--faint);font-size:11px}.ptsticks canvas{display:block;width:120px;height:120px}
+.ptt{display:grid;grid-template-columns:28px 1fr 40px;gap:8px;align-items:center;font-size:12px;color:var(--dim)}.ptt i{position:relative;height:14px;border-radius:7px;background:var(--bg2);border:1px solid var(--line);overflow:hidden}
+.ptt i b,.ptt i s{position:absolute;left:0;top:0;bottom:0}.ptt i b{background:var(--line)}.ptt i s{background:var(--acc)}.ptt i u{position:absolute;top:0;bottom:0;width:2px;background:var(--gold)}
+#ptbtns{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px}#ptbtns button{padding:8px 0;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--dim);font-size:12px}
+#ptbtns button.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}#ptbtns button.ign{text-decoration:line-through;border-color:var(--red);color:var(--red);background:none}#ptbtns button.ign.on{background:rgba(255,123,123,.25)}
+#ptcal{margin-top:4px;width:100%;padding:10px;border:1px solid var(--acc);border-radius:8px;background:none;color:var(--text)}
 #lost{position:fixed;inset:0;display:none;place-items:center;pointer-events:none;z-index:2}#lost.on{display:grid}
 #lost .card{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:16px;background:rgba(22,1,30,.88);border:1px solid var(--line);max-width:min(420px,80vw)}
 #lost b{display:block;font:700 16px var(--display);color:var(--text);margin-bottom:3px}#lost span{color:var(--dim);font-size:13px;line-height:1.45}
@@ -510,12 +554,33 @@ html.app,html.app body{background:transparent}html.app #view{background:transpar
  <div class=row><label>Hold a value</label><div class=seg id=mslot><button data-v=1>B</button><button data-v=2>C</button><button data-v=0>A</button></div></div>
  <div class=row><button class=pill id=mdown>−</button><output id=mval style="flex:1;text-align:center;color:var(--text);font:700 18px var(--display)">1</output><button class=pill id=mup>+</button><button class=pill id=mhold>Hold</button></div>
  <div class=sep></div><h3>Controller</h3>
+ <button class=pill id=ptb style="width:100%;justify-content:center;margin-bottom:8px">Test controller &amp; dead zones</button>
+ <p class=info>Worn controller? It measures itself when it connects and whenever it sits untouched for a few seconds: stick drift is taken out, and a button or trigger that reads pressed with nobody touching it is ignored until it lets go. The dead zones set how far you push before anything happens.</p>
  <p class=info>PlayStation names (Xbox: A, B, X, Y, LB, RB, LT, RT, View, Menu). R2 forward, L2 reverse, left stick steers, hold ✕ to brake. D-pad: speed and turn gears. □ photo, △ record, L1 / R1 circle. ○ stops. Options: these settings (D-pad picks and changes a row, ✕ presses it). Share: photos and videos. Press the left stick: whole picture or fill screen. Press the right stick: zoom. The controller buzzes at 4:00 and if the car drops out.</p>
  <button id=reset>Reset to defaults</button>
 </div>
 <div id=gal><div class=bar><h2>Photos &amp; videos</h2><button class=ib id=galx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id=grid></div></div>
 <div id=viewer><div class=bar><button class=ib id=vback title=Back><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
  <div class=act><button class=pill id=vshare>Share</button><button class=pill id=vdel>Delete</button></div></div><div id=vbody></div></div>
+<div id=padt><div class=bar><h2>Controller test</h2><button class=ib id=ptx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+<div id=ptbody>
+ <div class=ptcol>
+  <div class=ptsticks><div><canvas id=ptL width=120 height=120></canvas>Left stick</div><div><canvas id=ptR width=120 height=120></canvas>Right stick</div></div>
+  <p class=info>Grey dot: what the stick says. Purple dot: what the car gets. The shaded circle is the dead zone; the purple dot stays in the middle until you push past it.</p>
+  <div class=ptt><span>L2</span><i id=ptL2><b></b><s></s><u></u></i><output>0</output></div>
+  <div class=ptt><span>R2</span><i id=ptR2><b></b><s></s><u></u></i><output>0</output></div>
+  <p class=info>Grey bar: the trigger. Gold line: where it starts to count. Purple: what the car gets.</p>
+ </div>
+ <div class=ptcol>
+  <div id=ptbtns></div>
+  <p class=info>Lit: pressed now. Red and crossed out: ignored (it pressed itself, or you turned it off). Tap a button here to turn it off or on for good.</p>
+  <div class=row><label>Stick dead zone</label><input type=range id=ptdzs min=0 max=.5 step=.01><output></output></div>
+  <div class=row><label>Trigger dead zone</label><input type=range id=ptdzt min=0 max=.5 step=.01><output></output></div>
+  <div class=row><label>Check itself when idle</label><div class=seg id=ptauto><button data-v=0>Off</button><button data-v=1>On</button></div></div>
+  <button id=ptcal>Recalibrate now (hands off)</button>
+  <p class=info id=ptinfo></p>
+ </div>
+</div></div>
 <div id=off><div>Car server isn't running.<br>In Termux: <code>python fpv_car.py serve</code></div></div>
 <script>
 const $=q=>document.querySelector(q);
@@ -587,12 +652,78 @@ const Jset=(t,s)=>{JK.style.transform=`translate(${s*jrad()}px,${-t*jrad()}px)`;
 // In settings: D-pad up/down picks a row, left/right changes it, X presses it, Circle or Options closes.
 // In photos & videos: D-pad moves, X opens (plays / pauses a video), left/right next / previous,
 // Square shares, Triangle deletes (twice to confirm), Circle goes back.
-let prevBtn=[],braking=false,padWas=false,padWarned=false;const dz=v=>Math.abs(v)<.1?0:v;
+let prevBtn=[],braking=false,padWas=false,padWarned=false;const dz=v=>v;   // dead zones are in the calibration below
+
+// ---------- calibration for worn controllers: drifting sticks, triggers that never rest at 0, buttons that press themselves ----------
+// Each controller is measured at rest: stick and trigger drift is taken out, and anything that reads pressed with nobody
+// touching it is ignored until it has let go for a moment. It runs when a controller connects, from Recalibrate, and by
+// itself when the controller has sat untouched for 6 s (at most every 30 s). Dead zones: push past them before anything
+// moves. Everything is remembered per controller on this phone.
+const CALDEF={dzs:.15,dzt:.12,auto:1,rest:[0,0,0,0],trest:[0,0],stuck:[],off:[]};
+let calAll={};try{calAll=JSON.parse(localStorage.carcal||'{}')}catch(e){}
+let cal={...CALDEF},calId=null,calLast=null,calSteadyAt=0,calDoneAt=0;const calRel={};
+const rawVal=(g,i)=>g.buttons[i]?+g.buttons[i].value||0:0;
+function calFor(g){const id=g.id||'controller';if(calId!==id){calId=id;cal={...CALDEF,...(calAll[id]||{})};calDoneAt=0}return cal}
+function calSave(){if(calId===null)return;calAll[calId]=cal;try{localStorage.carcal=JSON.stringify(calAll)}catch(e){}}
+// full: on connect and Recalibrate (anything held counts). Otherwise (idle check) a fully pressed trigger is never
+// taken for stuck, so holding R2 steady on a straight never switches the throttle off.
+function calibrate(g,full){const c=calFor(g);
+ c.rest=[0,1,2,3].map(i=>{const v=+(g.axes[i]||0);return Math.abs(v)<(full?.6:.35)?+v.toFixed(3):(c.rest[i]||0)});
+ c.trest=[6,7].map((i,k)=>{const v=rawVal(g,i);return v<.9?+v.toFixed(3):(c.trest[k]||0)});
+ const st=[];g.buttons.forEach((b,i)=>{const v=rawVal(g,i);if((i===6||i===7)?(full&&v>=.9):v>.5)st.push(i)});
+ c.stuck=full?st:[...new Set([...c.stuck,...st])];calDoneAt=Date.now();calSave();ptNote()}
+function calWatch(g){const now=Date.now(),snap=[...g.axes.slice(0,4).map(Number),...g.buttons.map((b,i)=>rawVal(g,i))];
+ if(!calLast||snap.length!==calLast.length||snap.some((v,i)=>Math.abs(v-calLast[i])>.03)){calLast=snap;calSteadyAt=now;return}
+ if(cal.auto&&!ptCount&&now-calSteadyAt>6000&&now-calDoneAt>30000)calibrate(g,false)}
+function calApply(g){const c=calFor(g),now=Date.now();
+ if(c.stuck.length){const keep=c.stuck.filter(i=>{if(rawVal(g,i)>.1){delete calRel[i];return true}
+   if(!calRel[i])calRel[i]=now;return now-calRel[i]<1500});            // works again once it has let go for 1.5 s
+  if(keep.length!==c.stuck.length){c.stuck=keep;calSave();ptNote()}}
+ const ign=i=>c.stuck.includes(i)||c.off.includes(i);
+ const axes=[0,1,2,3].map(i=>{const v=(+(g.axes[i]||0))-(c.rest[i]||0),a=Math.abs(v);return a<=c.dzs?0:Math.sign(v)*Math.min(1,(a-c.dzs)/(1-c.dzs))});
+ const buttons=g.buttons.map((b,i)=>{if(ign(i))return{value:0,pressed:false};
+  if(i===6||i===7){const d=Math.min(.9,(c.trest[i-6]||0)+c.dzt),v=rawVal(g,i),o=v<=d?0:Math.min(1,(v-d)/(1-d));return{value:o,pressed:o>.5}}
+  return{value:rawVal(g,i),pressed:!!(b&&b.pressed)}});
+ return{id:g.id,mapping:g.mapping,buttons,axes}}
+
+// ---------- controller test screen ----------
+const PTN=['✕','○','□','△','L1','R1','L2','R2','Share','Options','L3','R3','↑','↓','←','→','PS'];
+let ptCount=0;
+const ptOn=()=>$('#padt').classList.contains('on');
+PTN.forEach((n,i)=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{if(calId===null)return;
+ cal.off=cal.off.includes(i)?cal.off.filter(x=>x!==i):[...cal.off,i];calSave()};$('#ptbtns').appendChild(b)});
+function ptNote(){const el=$('#ptinfo');if(!el)return;
+ if(calId===null){el.textContent='No controller yet. Connect one and press any button.';return}
+ const ig=[...new Set([...cal.stuck,...cal.off])].map(i=>PTN[i]);
+ el.textContent='Controller: '+calId+'. '+(ig.length?'Ignored now: '+ig.join(', ')+'.':'Nothing ignored.')+(calDoneAt?' Last measured '+new Date(calDoneAt).toLocaleTimeString()+'.':'')}
+function ptSync(){$('#ptdzs').value=cal.dzs;$('#ptdzs').nextElementSibling.textContent=Math.round(cal.dzs*100)+'%';
+ $('#ptdzt').value=cal.dzt;$('#ptdzt').nextElementSibling.textContent=Math.round(cal.dzt*100)+'%';
+ document.querySelectorAll('#ptauto button').forEach(b=>b.classList.toggle('sel',+b.dataset.v===+cal.auto));ptNote()}
+$('#ptdzs').oninput=e=>{cal.dzs=+e.target.value;calSave();ptSync()};$('#ptdzt').oninput=e=>{cal.dzt=+e.target.value;calSave();ptSync()};
+document.querySelectorAll('#ptauto button').forEach(b=>b.onclick=()=>{cal.auto=+b.dataset.v;calSave();ptSync()});
+$('#ptb').onclick=()=>{sheet(false);touch.t=touch.s=null;fetch('/stop').catch(()=>{});$('#padt').classList.add('on');ptSync()};
+$('#ptx').onclick=()=>{$('#padt').classList.remove('on');ptCount=0;$('#ptcal').textContent='Recalibrate now (hands off)'};
+$('#ptcal').onclick=()=>{if(ptCount)return;if(!lastGp){ptNote();return}ptCount=3;
+ const step=()=>{if(!ptOn()){ptCount=0;return}if(--ptCount>0){$('#ptcal').textContent='Hands off… '+ptCount;setTimeout(step,1000);return}
+  if(lastGp)calibrate(lastGp,true);$('#ptcal').textContent='Done. Recalibrate again';padBuzz(150,.4)};
+ $('#ptcal').textContent='Hands off… 3';setTimeout(step,1000)};
+function ptStick(cv,rx,ry,ox,oy,rest){const g=cv.getContext('2d'),W=cv.width,R=W/2-6,C=W/2,css=getComputedStyle(document.documentElement);
+ g.clearRect(0,0,W,W);g.strokeStyle=css.getPropertyValue('--line').trim();g.lineWidth=2;g.beginPath();g.arc(C,C,R,0,7);g.stroke();
+ g.fillStyle='rgba(191,64,191,.18)';g.beginPath();g.arc(C+rest[0]*R,C+rest[1]*R,Math.max(2,cal.dzs*R),0,7);g.fill();
+ g.fillStyle='#9a88a1';g.beginPath();g.arc(C+rx*R,C+ry*R,6,0,7);g.fill();
+ g.fillStyle=css.getPropertyValue('--acc').trim();g.beginPath();g.arc(C+ox*R,C+oy*R,7,0,7);g.fill()}
+function ptDraw(raw,g){const bs=document.querySelectorAll('#ptbtns button');
+ PTN.forEach((n,i)=>{const b=bs[i];if(!b)return;b.classList.toggle('on',rawVal(raw,i)>.5);b.classList.toggle('ign',cal.stuck.includes(i)||cal.off.includes(i))});
+ const a=k=>+(raw.axes[k]||0);
+ ptStick($('#ptL'),a(0),a(1),g.axes[0],g.axes[1],[cal.rest[0],cal.rest[1]]);ptStick($('#ptR'),a(2),a(3),g.axes[2],g.axes[3],[cal.rest[2],cal.rest[3]]);
+ [6,7].forEach(i=>{const el=$(i===6?'#ptL2':'#ptR2'),v=rawVal(raw,i),o=g.buttons[i].value,d=Math.min(.9,(cal.trest[i-6]||0)+cal.dzt);
+  el.querySelector('b').style.width=(v*100)+'%';el.querySelector('s').style.width=(o*100)+'%';el.querySelector('u').style.left=(d*100)+'%';
+  el.nextElementSibling.textContent=Math.round(o*100)+'%'})}
 function buzz(ms,strong,gp){try{if(APP)CarApp.buzz(ms,strong);else gp&&gp.vibrationActuator&&gp.vibrationActuator.playEffect('dual-rumble',{duration:ms,strongMagnitude:strong,weakMagnitude:strong*.6}).catch(()=>{})}catch(e){}}
 let lastGp=null;const padBuzz=(ms,strong)=>{if(lastGp)buzz(ms,strong,lastGp)};
 // settings sheet: one row at a time
 let fi=0;
-const fItems=()=>[...document.querySelectorAll('#sheet .row,#sheet .tests button,#reset')];
+const fItems=()=>[...document.querySelectorAll('#sheet .row,#ptb,#sheet .tests button,#reset')];
 function fShow(){const L=fItems();document.querySelectorAll('.gpf').forEach(e=>e.classList.remove('gpf'));if(!L.length)return;fi=(fi+L.length)%L.length;
  const el=L[fi];el.classList.add('gpf');el.scrollIntoView({block:'nearest'})}
 function fStep(d){const el=fItems()[fi];if(!el)return;
@@ -618,9 +749,13 @@ function readPad(){let gp=null;if(APP){try{gp=JSON.parse(CarApp.pad()||'null')}c
  else gp=[...(navigator.getGamepads?navigator.getGamepads():[])].find(Boolean);
  $('#gp').classList.toggle('on',!!gp);
  if(!gp){if(padWas){padWas=false;braking=false;prevBtn=[];document.querySelectorAll('.gpf').forEach(e=>e.classList.remove('gpf'))}lastGp=null;return null}
- lastGp=gp;
- if(!padWas){padWas=true;prevBtn=gp.buttons.map(x=>x&&x.pressed);   // the press that woke it isn't acted on
-  if(!APP&&gp.mapping!=='standard'&&!padWarned){padWarned=true;toast('In the browser the buttons of this controller may be mixed up. The app reads them properly.')}}
+ const raw=gp;lastGp=raw;
+ if(!padWas){padWas=true;calibrate(raw,true);   // measure it at rest the moment it connects
+  if(!APP&&raw.mapping!=='standard'&&!padWarned){padWarned=true;toast('In the browser the buttons of this controller may be mixed up. The app reads them properly.')}}
+ calWatch(raw);gp=calApply(raw);
+ if(!prevBtn.length)prevBtn=gp.buttons.map(x=>!!x.pressed);   // the press that woke it isn't acted on
+ if(ptOn()){ptDraw(raw,gp);if(gp.buttons[9]&&gp.buttons[9].pressed&&!prevBtn[9])$('#ptx').onclick();
+  prevBtn=gp.buttons.map(x=>!!x.pressed);braking=false;return null}
  const b=i=>gp.buttons[i]?gp.buttons[i].value:0,pr=i=>!!(gp.buttons[i]&&gp.buttons[i].pressed),edge=i=>pr(i)&&!prevBtn[i];
  const thrIn=()=>{let t=b(7)-b(6);if(!t)t=dz(-(gp.axes[3]||0));return t};
  const inSheet=$('#sheet').classList.contains('on'),inGal=$('#gal').classList.contains('on'),inView=$('#viewer').classList.contains('on');
@@ -759,7 +894,7 @@ function toggleRec(){if($('#rec').style.display!=='grid')return;
   clearInterval(recTimer);
   if(recOn){recT0=Date.now();const r=$('#rec').getBoundingClientRect();$('#rtime').style.top=(r.top+r.height/2-8)+'px';$('#rtime').textContent='0:00';
    recTimer=setInterval(()=>{const s=(Date.now()-recT0)/1000|0;$('#rtime').textContent=(s/60|0)+':'+String(s%60).padStart(2,'0')},500)}
-  else if(j.file)toast(cfg.stamp?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
+  else if(j.file)toast(cfg.stamp&&!APP?'Adding date & time… it shows in the gallery when done':'Saved '+j.file.split('/').pop())}).catch(()=>{})}
 $('#rec').onclick=toggleRec;
 
 // ---------- gallery: everything the car has saved on this phone ----------
@@ -792,19 +927,23 @@ function goFull(){const d=document.documentElement;
 if(!APP){if(standalone)lock();else addEventListener('pointerdown',goFull,{once:true,capture:true});
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{})}
 let everLive=false,downAt=0;
-function carState(live){
+function carState(live,busy){
  if(live&&APP&&$('#photo').style.display!=='grid')showLive();
  if(live){everLive=true;miss=0;if(downAt){downAt=0;$('#lost').classList.remove('on');document.body.classList.remove('down')}return}
  if(++miss<2)return;                                   // ~2 s without a frame
  if(!downAt){downAt=Date.now();touch.t=touch.s=null;setOrbit(0);fetch('/stop').catch(()=>{});if(everLive)padBuzz(900,1);
   conn0=null;$('#ctime').classList.remove('on','late')}
- if(everLive){$('#lostT').textContent='Car disconnected';
-  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'}
+ if(busy){$('#lostT').textContent='Another controller has the car';
+  $('#lostS').textContent=(APP?'The Termux version (fpv_car.py serve) or Nessari’s drive screen is holding the picture. Close that page, or stop the script with Ctrl+C,':'The FPV Car app or Nessari’s drive screen is holding the picture. Close it (swipe the app away)')+' and the picture comes here by itself.'}
+ else if(everLive){$('#lostT').textContent='Car disconnected';
+  $('#lostS').textContent='No picture or control. The battery may be flat, or the car is out of Wi-Fi range. It reconnects by itself.'+(APP?'':' If it stays like this, turn mobile data off.')}
+ else{$('#lostT').textContent='Waiting for the car';
+  $('#lostS').textContent='Turn the car on and connect this phone to its Wi-Fi. The picture comes up by itself.'+(APP?'':' Turn mobile data off while you drive: with it on, the phone sends the car’s messages over mobile data and they never arrive.')}
  $('#lost').classList.add('on');document.body.classList.add('down')}
 let polls=0;
 setInterval(()=>fetch('/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{$('#off').classList.remove('on');
- if(++polls%3===0)sendTrim();carState(!!j.video)})
- .catch(()=>{$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
+ if(++polls%3===0)sendTrim();carState(!!j.video,!!j.busy)})
+ .catch(()=>{if(!APP)$('#off').classList.add('on');conn0=null;$('#ctime').classList.remove('on','late')}),1000);
 apply();sendTrim();
 </script></body></html>"""
 
@@ -831,8 +970,11 @@ def cmd_serve(c, port=8765):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import urlparse, parse_qs
     vid = Video(c.ip)
-    try: vid.start()
-    except OSError as e: print("video off:", e); vid = None
+    # quiet when no controller page (or other app) has asked anything for a few seconds: the open page
+    # asks every second, so a forgotten script never fights the FPV Car app or Nessari for the car
+    seen = [time.time()]
+    c.quiet = vid.quiet = lambda: time.time() - seen[0] > 5
+    vid.start()
 
     import os, re
     def media_dirs():
@@ -877,6 +1019,7 @@ def cmd_serve(c, port=8765):
             self.wfile.write(body.encode() if isinstance(body, str) else body)
 
         def do_GET(self):
+            seen[0] = time.time()
             u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path in ("/", "/pad"):
                 return self.reply(JOYSTICK_PAGE, "text/html")
@@ -908,7 +1051,7 @@ def cmd_serve(c, port=8765):
                 else: c.clear_extra()
                 return self.reply("ok")
             if u.path == "/status":
-                return self.reply(json.dumps({"video": bool(vid and vid.live),
+                return self.reply(json.dumps({"video": bool(vid and vid.live), "busy": vid.sock is None,
                                               "recording": bool(vid and vid.rec_file)}), "application/json")
             if u.path == "/media/list":
                 items = []
@@ -992,7 +1135,12 @@ def cmd_serve(c, port=8765):
 
         def log_message(self, *a): pass
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H); srv.daemon_threads = True
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), H); srv.daemon_threads = True
+    except OSError:
+        print(f"port {port} is busy: the FPV Car app (or another copy of this script) is open.\n"
+              "Close the app (swipe it away from recent apps), then run this again.")
+        return
     print(f"controller: http://127.0.0.1:{port}")
     try:
         srv.serve_forever()

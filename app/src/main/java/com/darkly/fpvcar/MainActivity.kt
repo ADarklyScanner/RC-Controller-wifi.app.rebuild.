@@ -66,10 +66,7 @@ class MainActivity : Activity() {
         car = CarLink(); video = VideoLink(this); media = Media(this)
         server = LocalServer(this, car, video, media)
         bindToCarWifi()
-        car.start(); video.start()
-        // network work is not allowed on the main thread; start it on its own and wait for it
-        Thread { try { server.start() } catch (e: Exception) { /* another copy (Termux) holds the port */ } }
-            .apply { start(); join(3000) }
+        startLinks()
 
         tex = TextureView(this)
         tex.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -124,10 +121,32 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) hideBars() }
 
+    /** Talk to the car, take its picture and serve the screen. Only while the app is on screen. */
+    private fun startLinks() {
+        car.start(); video.start()
+        // network work is not allowed on the main thread; start it on its own and wait for it
+        Thread { try { server.start() } catch (e: Exception) { /* another copy (Termux) holds the port */ } }
+            .apply { start(); join(3000) }
+    }
+
+    /** In the background the app lets go of everything: no drive or hello packets, the camera's port and
+     *  127.0.0.1:8765 are freed. Otherwise a forgotten app keeps sending "stand still" 20 times a second
+     *  and holds the picture, and the Termux version in Chrome and Nessari lose their camera and control. */
+    private fun stopLinks() { car.shutdown(); video.shutdown(); server.shutdown() }
+
+    private var stopped = false
+
+    override fun onStart() {
+        super.onStart()
+        if (stopped) { stopped = false; startLinks(); web.reload() }
+    }
+
+    override fun onStop() { super.onStop(); stopped = true; stopLinks(); padReset() }
+
     override fun onPause() { super.onPause(); car.stop(); padReset() }
 
     override fun onDestroy() {
-        car.stop(); car.shutdown(); video.shutdown(); server.shutdown()
+        stopLinks()
         try { getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(padWatch) } catch (_: Exception) {}
         wifiCallback?.let { try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
         web.destroy()
@@ -290,7 +309,9 @@ class MainActivity : Activity() {
             val b = JSONArray()
             for (v in buttons) b.put(JSONObject().put("value", v).put("pressed", v > 0.5))
             val a = JSONArray(); for (v in axes) a.put(v)
-            return JSONObject().put("buttons", b).put("axes", a).toString()
+            // the controller's name, so its calibration (drift, ignored buttons, dead zones) is kept for it alone
+            val name = InputDevice.getDevice(padId)?.name ?: "controller"
+            return JSONObject().put("id", name).put("buttons", b).put("axes", a).toString()
         }
     }
 }

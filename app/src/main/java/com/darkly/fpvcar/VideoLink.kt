@@ -39,7 +39,10 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
     }
 
     @Volatile var lastFrame = 0L
+    @Volatile var busy = false                   // another controller (Termux, Nessari) holds port 1234
     @Volatile private var running = false
+    @Volatile private var gen = 0                // a restart retires the old threads
+    @Volatile private var videoSock: DatagramSocket? = null
 
     // ---- decoder ----
     private val decLock = Object()
@@ -63,18 +66,26 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
 
     fun start() {
         if (running) return
-        running = true
-        Thread({ receive() }, "car-video").apply { isDaemon = true; start() }
-        Thread({ keepalive() }, "car-hello").apply { isDaemon = true; start() }
+        running = true; needKey = true
+        val my = ++gen
+        Thread({ receive(my) }, "car-video").apply { isDaemon = true; start() }
+        Thread({ keepalive(my) }, "car-hello").apply { isDaemon = true; start() }
     }
 
-    fun shutdown() { running = false; detach(); record(false) }
+    /** Let go of the camera: stop the hello and free port 1234 at once, so another controller
+     *  (the Termux version, Nessari) gets the picture while this app is in the background. */
+    fun shutdown() {
+        running = false; gen++
+        record(false)
+        try { videoSock?.close() } catch (_: Exception) {}
+        videoSock = null; lastFrame = 0L; busy = false
+    }
 
     // ---------------------------------------------------------------- network
-    private fun keepalive() {
+    private fun keepalive(my: Int) {
         val addr = InetAddress.getByName(ip)
         var s: DatagramSocket? = null
-        while (running) {
+        while (running && my == gen) {
             try {
                 if (s == null) {
                     s = try { DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(HELLO_PORT)) } }
@@ -96,19 +107,25 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
 
     private class Frame(val size: Int, val count: Int) { val parts = TreeMap<Int, ByteArray>() }
 
-    private fun receive() {
+    private fun receive(my: Int) {
         var sock: DatagramSocket? = null
         val buf = ByteArray(2048)
         val frames = HashMap<Long, Frame>()
         var newest = -1L
         var lost = true
-        while (running) {
+        while (running && my == gen) {
             try {
                 if (sock == null) {
-                    sock = DatagramSocket(null).apply {
-                        reuseAddress = true; receiveBufferSize = 4 shl 20; soTimeout = 1000
-                        bind(InetSocketAddress(VIDEO_PORT))
-                    }
+                    // no address sharing: if another controller holds the port, wait for it instead of
+                    // splitting the picture with it (the car's stream only reaches one of them)
+                    val fresh = DatagramSocket(null)
+                    try {
+                        fresh.receiveBufferSize = 4 shl 20; fresh.soTimeout = 1000
+                        fresh.bind(InetSocketAddress(VIDEO_PORT))
+                    } catch (e: Exception) { fresh.close(); throw e }
+                    sock = fresh
+                    videoSock = sock; busy = false
+                    if (my != gen) { fresh.close(); break }
                 }
                 val pk = DatagramPacket(buf, buf.size)
                 try { sock!!.receive(pk) } catch (_: java.net.SocketTimeoutException) { continue }
@@ -141,6 +158,7 @@ class VideoLink(private val ctx: Context, private val ip: String = CarLink.CAR_I
                     onFrame(out, key)
                 }
             } catch (e: Exception) {
+                if (sock == null && e is java.net.BindException) busy = true
                 try { sock?.close() } catch (_: Exception) {}
                 sock = null
                 try { Thread.sleep(500) } catch (_: InterruptedException) {}
