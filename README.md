@@ -34,6 +34,10 @@ Both share one screen (the app copies it from the Termux script at build time, `
 - **Press the left stick:** whole picture / fill screen. **Press the right stick:** zoom 1×, 1.5×, 2×, 3×
 - The controller buzzes at 4:00 (about a minute of battery left) and when the car drops out.
 - If the controller disconnects mid-drive the car stops.
+- **Worn controllers:** each controller is measured at rest when it connects and whenever it sits untouched for
+  6 seconds. Stick and trigger drift is taken out, and a button or trigger that reads pressed with nobody touching it
+  is ignored until it lets go. Settings > Test controller & dead zones shows live sticks, triggers and buttons, sets the
+  stick and trigger dead zones, recalibrates on demand, and turns any button off for good. Kept per controller.
 
 **How it was decoded, which toy it is for, and how to adapt it to yours:** [docs/HOW-IT-WAS-DECODED.md](docs/HOW-IT-WAS-DECODED.md)
 
