@@ -51,6 +51,10 @@ class MainActivity : Activity() {
     @Volatile private var fit = "contain"
     @Volatile private var zoom = 1.0
     @Volatile private var flip = false
+    private var grabBmp: Bitmap? = null
+    @Volatile private var grabPx = IntArray(0)
+    @Volatile private var grabW = 0
+    @Volatile private var grabH = 0
     @Volatile private var bright = 1.0
 
     // ---- PlayStation / any gamepad, in the browser's "standard" button order ----
@@ -320,6 +324,52 @@ class MainActivity : Activity() {
             val px = IntArray(W * H)
             try { b.getPixels(px, 0, W, 0, 0, W, H) } catch (_: Exception) { return "" } finally { b.recycle() }
             val out = ByteArray(W * H) { val c = px[it]; (((c shr 16 and 255) * 3 + (c shr 8 and 255) * 6 + (c and 255)) / 10).toByte() }
+            return Base64.encodeToString(out, Base64.NO_WRAP)
+        }
+
+        /** A bigger look for the speed bubble and straight hold: grab() keeps one copy of the newest picture (w x h, at
+         *  most 320 x 180, turned round when Flip is on) in a reused buffer; rows() then hands back rows y0 to y1 of
+         *  it, each step x step block averaged into one pixel, as grey (1 byte) or colour (3 bytes, R G B), base64.
+         *  Only called while one of those helpers needs it. */
+        @JavascriptInterface
+        fun grab(w: Int, h: Int): Boolean {
+            if (!video.live) return false
+            val W = w.coerceIn(16, 320); val H = h.coerceIn(9, 180)
+            val latch = CountDownLatch(1)
+            var ok = false
+            runOnUiThread {
+                try {
+                    val b = grabBmp?.takeIf { it.width == W && it.height == H }
+                        ?: Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).also { grabBmp?.recycle(); grabBmp = it }
+                    val keep = tex.getTransform(null)
+                    tex.setTransform(Matrix())
+                    tex.getBitmap(b)
+                    tex.setTransform(keep)
+                    if (grabPx.size != W * H) grabPx = IntArray(W * H)
+                    b.getPixels(grabPx, 0, W, 0, 0, W, H)
+                    if (flip) grabPx.reverse()
+                    grabW = W; grabH = H; ok = true
+                } catch (_: Exception) {}
+                latch.countDown()
+            }
+            if (!latch.await(300, TimeUnit.MILLISECONDS)) return false
+            return ok
+        }
+
+        @JavascriptInterface
+        fun rows(y0: Int, y1: Int, step: Int, color: Boolean): String {
+            val W = grabW; val H = grabH; if (W == 0) return ""
+            val k = step.coerceIn(1, 8); val w = W / k; val hk = H / k
+            val a = (y0 / k).coerceIn(0, hk); val b = (y1 / k).coerceIn(a, hk)
+            val px = grabPx; if (px.size < W * H) return ""
+            val out = ByteArray(w * (b - a) * (if (color) 3 else 1)); var o = 0; val kk = k * k
+            for (y in a until b) for (x in 0 until w) {
+                var r = 0; var g = 0; var bl = 0
+                for (dy in 0 until k) { val row = (y * k + dy) * W + x * k; for (dx in 0 until k) { val c = px[row + dx]; r += c shr 16 and 255; g += c shr 8 and 255; bl += c and 255 } }
+                r /= kk; g /= kk; bl /= kk
+                if (color) { out[o++] = r.toByte(); out[o++] = g.toByte(); out[o++] = bl.toByte() }
+                else out[o++] = ((r * 3 + g * 6 + bl) / 10).toByte()
+            }
             return Base64.encodeToString(out, Base64.NO_WRAP)
         }
 
