@@ -1,9 +1,10 @@
 // Android app only. LocalServer adds this after the shared screen (page.html), so the Termux version and the
 // Chrome page stay exactly as they are. It runs after the page's own script and uses its names (cfg, touch, orbit...).
 // Adds: tap-anywhere driving, a rebuilt one-thumb stick, a reverse speed limit with a gentle start, drift mode,
-// a floor ruler over the picture and kick start (both from Nessari's drive screen, Oct 22).
+// a floor ruler over the picture, kick start, and three driving helpers: stuck stop, corner limit and side nudge
+// (all from Nessari's drive screen, Oct 22).
 (()=>{
-const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20,ruler:1,kick:1};
+const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20,ruler:1,kick:1,stuck:1,corner:1,nudge:1};
 let A={...AD};try{Object.assign(A,JSON.parse(localStorage.carapp||'{}'))}catch(e){}
 A.drift=0;   // drift mode is off every time the app opens
 const aSave=()=>{try{const k={...A};delete k.drift;localStorage.carapp=JSON.stringify(k)}catch(e){}};
@@ -61,6 +62,37 @@ addEventListener('pointermove',pmove);addEventListener('pointerup',pup);addEvent
 //  flick: reaching full lock with full throttle cuts the throttle for one message (0.1 s), like a lift-off flick.
 const KICK=120;let rollDir=0,rollUntil=0,kickUntil=0;
 let drives=0,revAt=0,prevS=0,snapUntil=0,snapDir=0,flickUntil=0,flicked=0;
+// ---------- driving helpers (from Nessari v1.66), each with its own switch ----------
+// The app hands the page a tiny grey copy of the picture (32 x 18) 8 times a second, only while the car is driven.
+// From it: how much the picture changed since the last look, in the left and right halves (of 255).
+//  stuck stop: pushing throttle but the picture hasn't moved for a second: stop pushing that way until the stick is
+//    let go or turned the other way (saves the motor and battery against a wall).
+//  corner limit: at full lock going forward, ease off to 75% of the gear so it doesn't slide wide.
+//  side nudge: going straight forward, if one side is sweeping past much faster (something close there), steer a
+//    little away from it.
+const STILL=2.5,CORNER=.75;
+const cam={motion:99,left:0,right:0,at:0,prev:null};
+const ast={dir:0,since:0,stuckSince:0,stuckDir:0,veer:0};
+let lastDrive=0;
+setInterval(()=>{if(!window.CarApp||Date.now()-lastDrive>600){cam.prev=null;return}
+ let b='';try{b=CarApp.look(32,18)}catch(e){}
+ if(!b){cam.prev=null;return}
+ const r=atob(b),g=new Uint8Array(r.length);for(let i=0;i<r.length;i++)g[i]=r.charCodeAt(i);
+ if(cam.prev&&cam.prev.length===g.length){let sum=0,l=0,rr=0;for(let i=0;i<g.length;i++){const d=Math.abs(g[i]-cam.prev[i]);sum+=d;if(i%32<16)l+=d;else rr+=d}
+  cam.motion=sum/g.length;cam.left=l/(g.length/2);cam.right=rr/(g.length/2);cam.at=Date.now()}
+ cam.prev=g},125);
+function helpers(t,s,g,now){const dir=t>0?1:t<0?-1:0;
+ if(dir!==ast.dir){ast.dir=dir;ast.since=now;ast.stuckSince=0;ast.veer=0}
+ if(ast.stuckDir){if(dir===ast.stuckDir)return{t:0,s};ast.stuckDir=0}
+ if(A.stuck&&dir&&now-ast.since>1200&&now-cam.at<400){
+  if(cam.motion<STILL){ast.stuckSince=ast.stuckSince||now;
+   if(now-ast.stuckSince>1000){ast.stuckDir=dir;ast.stuckSince=0;toast('Stuck: let go of the throttle or go the other way');try{buzz(200,.6)}catch(e){}return{t:0,s}}}
+  else ast.stuckSince=0}
+ if(A.corner&&t>CORNER*g&&Math.abs(s)>=.75)t=CORNER*g;
+ if(A.nudge&&t>.3*g&&Math.abs(s)<.15&&now-ast.since>700&&now-cam.at<400){const l=cam.left,r=cam.right,sum=l+r;
+  const want=sum<2*STILL||Math.abs(r-l)/sum<.25?0:-1.4*(r-l)/sum;ast.veer=clamp(ast.veer*.5+want*.5);const v=ast.veer*.5;if(Math.abs(v)>.1)s=clamp(s+v)}
+ else ast.veer=0;
+ return{t,s}}
 function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s=+q.get('s')||0;const oc=q.get('oc')==='1',now=Date.now();
  if(A.drift&&!orbit){const g=oc?1:cfg.sg/3,d=1-cfg.ssr*Math.abs(t)*(oc?1:76/127),raw=t/g,a=Math.abs(raw);
   const s0=d>.05?s/d:s;   // put back the steering the screen took away at speed
@@ -74,12 +106,13 @@ function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s
  // kick start (from Nessari v1.65): a motor needs more push to start turning than to keep going, so a slow throttle
 // from a stop, or a change between forward and back, gets about a tenth of a second at full first (full for the
 // speed gear), then drops to what was asked. 70% of the gear and more needs none. Off in drift mode and circling.
+ lastDrive=now;if(!A.drift&&!orbit){const h=helpers(t,s,oc?1:cfg.sg/3,now);t=h.t;s=h.s}
  if(A.kick&&!A.drift&&!orbit&&t){const g=oc?1:cfg.sg/3,dir=t<0?-1:1;if(Math.abs(t)<.7*g&&(now>rollUntil||dir!==rollDir))kickUntil=now+KICK;
   rollDir=dir;rollUntil=now+450;if(now<kickUntil)t=dir*g}
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150)}}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150);ast.dir=ast.stuckDir=0}}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';
@@ -117,6 +150,11 @@ groups['Picture'].insertAdjacentHTML('beforeend',row('Floor ruler',seg('a_ruler'
  info('Lines on the floor at 5, 10, 20, 30 and 50 cm and 1 m in front of the car, each a tile (30 cm) wide, with a dotted line straight ahead. Measured on this car’s camera (Oct 22). Right while the car sits flat on the floor.'));
 groups['Driving'].insertAdjacentHTML('beforeend',row('Kick start',seg('a_kick'))+
  info('A slow speed from a stop gets about a tenth of a second at full first, so it actually gets going, then drops to what you asked.'));
+
+groups['Driving'].closest('details').insertAdjacentHTML('afterend','<details class=dd><summary>Helpers</summary><div class=ddb>'+
+ row('Stuck stop',seg('a_stuck'))+info('Pushing throttle but the picture hasn’t moved for a second: it stops pushing that way until you let go or go the other way. Saves the motor and battery against a wall.')+
+ row('Corner limit',seg('a_corner'))+info('At full turn going forward it eases off to 75% so it doesn’t slide wide.')+
+ row('Side nudge',seg('a_nudge'))+info('Going straight forward, if something close is sweeping past one side, it steers a little away from it.')+'</div></details>');
 
 // ---------- floor ruler (from Nessari v1.43-v1.60) ----------
 // The car's lens, measured from chart photos at 10 to 50 cm (Oct 22): f its reach as a share of the picture's width,
@@ -209,7 +247,7 @@ setInterval(()=>{const now=Date.now();
 // ---------- settings rows ----------
 A.tslot=A.tslot||1;A.tthr=A.tthr||.2;
 const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×',tthr:v=>Math.round(v*100)+'%'};
-const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot','ruler','kick'];
+const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot','ruler','kick','stuck','corner','nudge'];
 const sendRate=()=>f0('/rate?ms='+Math.round(1000/A.crate)).catch(()=>{});
 function aApply(){document.body.classList.toggle('tapany',!!A.tap);drawRuler();db.classList.toggle('on',!!A.drift);
  for(const k of RN){const i=$('#a_'+k);i.value=A[k];i.nextElementSibling.textContent=fmtA[k](A[k])}

@@ -16,6 +16,7 @@ import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
+import android.util.Base64
 import android.os.Vibrator
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -294,6 +295,32 @@ class MainActivity : Activity() {
             if (!video.live) return ""
             val bmp = grabFrame() ?: return ""
             return media.savePhoto(bmp, fl == 1, stamp == 1) ?: ""
+        }
+
+        /** A small grey copy of the newest picture (w x h, at most 320 x 180), untouched by zoom / fit, as base64 of
+         *  one byte a pixel; "" when there's no picture. The driving helpers read it a few times a second while the car
+         *  is being driven, never otherwise. */
+        @JavascriptInterface
+        fun look(w: Int, h: Int): String {
+            if (!video.live) return ""
+            val W = w.coerceIn(8, 320); val H = h.coerceIn(6, 180)
+            val latch = CountDownLatch(1)
+            var bmp: Bitmap? = null
+            runOnUiThread {
+                try {
+                    val keep = tex.getTransform(null)
+                    tex.setTransform(Matrix())
+                    bmp = tex.getBitmap(W, H)
+                    tex.setTransform(keep)
+                } catch (_: Exception) {}
+                latch.countDown()
+            }
+            latch.await(300, TimeUnit.MILLISECONDS)
+            val b = bmp ?: return ""
+            val px = IntArray(W * H)
+            try { b.getPixels(px, 0, W, 0, 0, W, H) } catch (_: Exception) { return "" } finally { b.recycle() }
+            val out = ByteArray(W * H) { val c = px[it]; (((c shr 16 and 255) * 3 + (c shr 8 and 255) * 6 + (c and 255)) / 10).toByte() }
+            return Base64.encodeToString(out, Base64.NO_WRAP)
         }
 
         @JavascriptInterface
