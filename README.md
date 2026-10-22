@@ -36,6 +36,16 @@ in the Termux version or the Chrome page (Settings > App):
   slot tests, a speed check (screen refresh, touch reports, updates and messages to the car, camera pictures per second),
   a choice of screen updates (10 to 50 a second) and messages to the car (20, the stock app, to 100 a second), a steering
   speed test and a slot B / C test with the motor running.
+- **Floor ruler** (Settings > Picture): lines on the floor at 5, 10, 20, 30 and 50 cm and 1 m in front of the car,
+  each a tile wide, and a dotted line straight ahead. Drawn through this car's measured lens, so the lines bend the way
+  the picture does. From Nessari's drive screen.
+- **Kick start** (Settings > Driving): a slow speed from a stop, or a change between forward and back, gets about a
+  tenth of a second at full (for the speed gear) first, so it actually starts rolling. From Nessari's drive screen.
+- **Helpers** (Settings > Helpers, each with its own switch; from Nessari's drive screen): **stuck stop** (pushing
+  throttle but the picture hasn't moved for a second: it stops pushing that way until you let go or go the other way),
+  **corner limit** (full turn going forward eases off to 75%), **side nudge** (going straight, steers a little away from
+  something close sweeping past one side). They read a tiny grey copy of the picture (32 x 18) from the app 8 times a
+  second, only while you drive.
 - **Drift mode** (D button): throttle is light or full (full power can be lowered for slick tyres), nothing between;
   steering is stronger and not reduced at speed. Steering snap: a quick turn goes to full lock for a moment.
   Flick: reaching full lock at full throttle cuts power for one message (0.1 s), once per turn.
