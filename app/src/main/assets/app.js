@@ -1,8 +1,9 @@
 // Android app only. LocalServer adds this after the shared screen (page.html), so the Termux version and the
 // Chrome page stay exactly as they are. It runs after the page's own script and uses its names (cfg, touch, orbit...).
-// Adds: tap-anywhere driving, a rebuilt one-thumb stick, a reverse speed limit with a gentle start, and drift mode.
+// Adds: tap-anywhere driving, a rebuilt one-thumb stick, a reverse speed limit with a gentle start, drift mode,
+// a floor ruler over the picture and kick start (both from Nessari's drive screen, Oct 22).
 (()=>{
-const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20};
+const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20,ruler:1,kick:1};
 let A={...AD};try{Object.assign(A,JSON.parse(localStorage.carapp||'{}'))}catch(e){}
 A.drift=0;   // drift mode is off every time the app opens
 const aSave=()=>{try{const k={...A};delete k.drift;localStorage.carapp=JSON.stringify(k)}catch(e){}};
@@ -58,6 +59,7 @@ addEventListener('pointermove',pmove);addEventListener('pointerup',pup);addEvent
 // and steering is stronger and not reduced at speed. Two helpers for turn-in, both settings:
 //  snap: a sudden turn goes to full lock for a moment (Drift steering snap, ms), so the nose comes round fast;
 //  flick: reaching full lock with full throttle cuts the throttle for one message (0.1 s), like a lift-off flick.
+const KICK=120;let rollDir=0,rollUntil=0,kickUntil=0;
 let drives=0,revAt=0,prevS=0,snapUntil=0,snapDir=0,flickUntil=0,flicked=0;
 function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s=+q.get('s')||0;const oc=q.get('oc')==='1',now=Date.now();
  if(A.drift&&!orbit){const g=oc?1:cfg.sg/3,d=1-cfg.ssr*Math.abs(t)*(oc?1:76/127),raw=t/g,a=Math.abs(raw);
@@ -69,10 +71,15 @@ function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s
   if(A.dflick&&!flicked&&full&&t>0&&Math.abs(s)>=.95){flicked=1;flickUntil=now+80}
   if(now<flickUntil)t=0;
   prevS=s}else prevS=0
+ // kick start (from Nessari v1.65): a motor needs more push to start turning than to keep going, so a slow throttle
+// from a stop, or a change between forward and back, gets about a tenth of a second at full first (full for the
+// speed gear), then drops to what was asked. 70% of the gear and more needs none. Off in drift mode and circling.
+ if(A.kick&&!A.drift&&!orbit&&t){const g=oc?1:cfg.sg/3,dir=t<0?-1:1;if(Math.abs(t)<.7*g&&(now>rollUntil||dir!==rollDir))kickUntil=now+KICK;
+  rollDir=dir;rollUntil=now+450;if(now<kickUntil)t=dir*g}
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0)revAt=prevS=snapUntil=flickUntil=flicked=0}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150)}}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';
@@ -106,6 +113,37 @@ groups['Driving'].closest('details').insertAdjacentHTML('afterend','<details cla
  row('Light throttle',rng('a_dlow',.05,.5,.05))+row('Full throttle past',rng('a_dfull',.4,.95,.05))+row('Full power',rng('a_dmax',.3,1,.05))+row('Steering',rng('a_dgain',1,2,.1))+
  row('Steering snap',rng('a_dsnap',0,400,50))+row('Flick on turn-in',seg('a_dflick'))+
  info('Drift mode (the D button): throttle is light or full, nothing between, and steering is stronger. Full power can be lowered for slick tyres. Snap: a quick turn goes to full lock for a moment. Flick: full lock at full throttle cuts power for 0.1 s to kick the back out. Drift mode is off each time the app opens.')+'</div></details>');
+groups['Picture'].insertAdjacentHTML('beforeend',row('Floor ruler',seg('a_ruler'))+
+ info('Lines on the floor at 5, 10, 20, 30 and 50 cm and 1 m in front of the car, each a tile (30 cm) wide, with a dotted line straight ahead. Measured on this car’s camera (Oct 22). Right while the car sits flat on the floor.'));
+groups['Driving'].insertAdjacentHTML('beforeend',row('Kick start',seg('a_kick'))+
+ info('A slow speed from a stop gets about a tenth of a second at full first, so it actually gets going, then drops to what you asked.'));
+
+// ---------- floor ruler (from Nessari v1.43-v1.60) ----------
+// The car's lens, measured from chart photos at 10 to 50 cm (Oct 22): f its reach as a share of the picture's width,
+// k how much it bends (division model, per width squared), cy the middle's height as a share of the picture's height,
+// h the camera's height and nose how far it sits behind the car's front, in cm. Straight lines on the floor show up
+// curved, so the ruler's lines are drawn curved too. Drawn once per screen size or setting, never per picture.
+const LENS={f:.443,k:-1.163,cy:.479,h:4.22,nose:4.4},VW=1280,VH=720;
+const bend=(u,v)=>{const r=Math.hypot(u,v),k=LENS.k,q=r<1e-9?1:(1-Math.sqrt(1-4*k*r*r))/(2*k*r*r);return[VW/2+u*q*VW,LENS.cy*VH+v*q*VW]};
+const floorAt=(x,d)=>{const z=Math.max(.5,d+LENS.nose);return bend(LENS.f*x/z,LENS.f*LENS.h/z)};
+st.textContent+='#ruler{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform-origin:center;display:none}#ruler polyline,#ruler line{fill:none}#ruler .side{stroke-dasharray:4 4}#ruler .mid{stroke-dasharray:3 6}';
+$('#view').insertAdjacentHTML('beforeend','<svg id=ruler xmlns="http://www.w3.org/2000/svg"></svg>');
+let rulerKey='';
+function drawRuler(){const sv=$('#ruler');if(!sv)return;sv.style.display=A.ruler?'block':'none';if(!A.ruler)return;
+ const key=[cfg.fit,cfg.zoom,innerWidth,innerHeight].join();sv.style.transform='scale('+cfg.zoom+')';if(key===rulerKey)return;rulerKey=key;
+ sv.setAttribute('viewBox','0 0 '+VW+' '+VH);sv.setAttribute('preserveAspectRatio',cfg.fit==='fill'?'xMidYMid slice':'xMidYMid meet');
+ const fs=Math.round(VH*.026),inside=p=>p[0]>=0&&p[0]<=VW&&p[1]<=VH;
+ const poly=(pts,cls)=>'<polyline'+(cls?' class='+cls:'')+' points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'"/>';
+ let g='',prev=null;
+ for(const d of [5,10,20,30,50,100]){const pts=[];for(let i=0;i<=24;i++){const p=floorAt(-15+i*1.25,d);if(inside(p)&&p[1]<=VH-2)pts.push(p)}
+  if(pts.length<2)continue;g+=poly(pts);
+  if(prev!=null)for(const sx of [-15,15]){const side=[];for(let i=0;i<=10;i++){const p=floorAt(sx,prev+(d-prev)*i/10);if(inside(p))side.push(p)}if(side.length>1)g+=poly(side,'side')}
+  const e=pts[pts.length-1],lx=Math.min(e[0]+fs*.4,VW-fs*3.2),ly=lx<e[0]?e[1]-fs*.4:e[1]+fs*.35;
+  g+='<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'">'+(d<100?d+' cm':'1 m')+'</text>';prev=d}
+ g+='<line class=mid x1="'+VW/2+'" y1="'+VH+'" x2="'+VW/2+'" y2="'+floorAt(0,100)[1].toFixed(1)+'"/>';   // straight ahead, to line the car up
+ sv.innerHTML='<g stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-opacity=".6" font-size="'+fs+'" fill="#fff" fill-opacity=".85" paint-order="stroke" style="font-family:system-ui,sans-serif">'+g+'</g>'}
+const ap0=apply;apply=function(){ap0();drawRuler()};addEventListener('resize',drawRuler);
+
 // the old Tests group moves to Test mode
 const oldTests=groups['Tests'];
 // inside a .tests box so the controller's D-pad reaches it (the shared screen's list takes '#sheet .tests button')
@@ -171,9 +209,9 @@ setInterval(()=>{const now=Date.now();
 // ---------- settings rows ----------
 A.tslot=A.tslot||1;A.tthr=A.tthr||.2;
 const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×',tthr:v=>Math.round(v*100)+'%'};
-const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot'];
+const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot','ruler','kick'];
 const sendRate=()=>f0('/rate?ms='+Math.round(1000/A.crate)).catch(()=>{});
-function aApply(){document.body.classList.toggle('tapany',!!A.tap);db.classList.toggle('on',!!A.drift);
+function aApply(){document.body.classList.toggle('tapany',!!A.tap);drawRuler();db.classList.toggle('on',!!A.drift);
  for(const k of RN){const i=$('#a_'+k);i.value=A[k];i.nextElementSibling.textContent=fmtA[k](A[k])}
  for(const k of SG)document.querySelectorAll('#a_'+k+' button').forEach(b=>b.classList.toggle('sel',+b.dataset.v===+A[k]))}
 for(const k of RN)$('#a_'+k).oninput=e=>{A[k]=+e.target.value;aApply();aSave()};
