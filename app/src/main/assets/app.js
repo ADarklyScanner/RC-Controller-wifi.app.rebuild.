@@ -95,7 +95,9 @@ function helpers(t,s,g,now){const dir=t>0?1:t<0?-1:0;
   else ast.stuckSince=0}
  if(A.corner&&t>CORNER*g&&Math.abs(s)>=.75)t=CORNER*g;
  if(A.nudge&&t>.3*g&&Math.abs(s)<.15&&now-ast.since>700&&now-cam.at<400){const l=cam.left,r=cam.right,sum=l+r;
-  const want=sum<2*STILL||Math.abs(r-l)/sum<.25?0:-1.4*(r-l)/sum;ast.veer=clamp(ast.veer*.5+want*.5);const v=ast.veer*.5;if(Math.abs(v)>.1)s=clamp(s+v)}
+  // (a wall or box close in front fills both halves: then which half is busier is chance, and it used to steer
+  //  into the wall. Nothing then; the speed bubble and stuck stop deal with what's ahead)
+  const want=sum<2*STILL||Math.abs(r-l)/sum<.25||Math.min(l,r)>4*STILL?0:-1.4*(r-l)/sum;ast.veer=clamp(ast.veer*.5+want*.5);const v=ast.veer*.5;if(Math.abs(v)>.1)s=clamp(s+v)}
  else ast.veer=0;
  s=hold(t,s,dir,now);
  return{t,s}}
@@ -155,19 +157,22 @@ const vOf=(t,oc)=>{const a=Math.abs(t)*(oc?127:76)/51;if(a>=1)return 55.5*Math.m
  for(let i=1;i<SPD.length;i++)if(a<=SPD[i][0]){const[x0,y0]=SPD[i-1],[x1,y1]=SPD[i];return y0+(y1-y0)*(a-x0)/(x1-x0)}return 55.5};
 const HAND={near:1,delay:.25,brake:220,nose:2};   // (cm; s of picture delay; cm/s² of a hard reverse burst; no forward this close)
 const handStop=v=>HAND.near+v*HAND.delay+v*v/(2*HAND.brake);
-const bub={v:0,at:0,until:0,panic:0,saidAt:0};
+const bub={v:0,at:0,until:0,panic:0,block:0,saidAt:0};
 function bubble(t,g,oc,now){
  if(now<bub.until)return{brake:1,t:bub.panic?-1:-g,oc:bub.panic};
  const dt=bub.at?Math.min(1,(now-bub.at)/1000):1,v0=bub.at&&now-bub.at<1500?bub.v:0;
- if(t<=0){bub.v=v0*Math.max(0,1-dt/.8);bub.at=now;return null}   // (backing up or coasting: its forward speed dies away)
- const cm=clearAhead(now);
+ if(t<=0){bub.v=v0*Math.max(0,1-dt/.8);bub.at=now;bub.block=0;return null}   // (backing up or coasting: its forward speed dies away)
+ const cm=clearAhead(now),want=vOf(t,oc);
  if(cm<=HAND.nose){bub.v=0;bub.at=now;return{hold:1}}
- if(v0>20&&handStop(v0)>=cm){const panic=cm<=HAND.near+4,ms=Math.round(Math.max(80,Math.min(300,1000*v0/HAND.brake)));
-  bub.until=now+ms;bub.panic=panic?1:0;bub.v=0;bub.at=now;
+ // (after a brake, forward waits until you let go or back up, or the thing is out of reach: it used to brake, then
+ //  drive straight on into the wall)
+ if(bub.block){if(cm>handStop(want)+5)bub.block=0;else{bub.v=0;bub.at=now;return{hold:1}}}
+ if(v0>12&&handStop(v0)>=cm){const panic=cm<=HAND.near+4,ms=Math.round(Math.max(80,Math.min(300,1000*v0/HAND.brake)));
+  bub.until=now+ms;bub.panic=panic?1:0;bub.block=1;bub.v=0;bub.at=now;
   if(now-bub.saidAt>3000){bub.saidAt=now;toast(panic?'Speed bubble: panic stop':'Speed bubble: braked, something close ahead')}
   try{buzz(120,.5)}catch(e){}
   return{brake:1,t:panic?-1:-g,oc:panic}}
- const want=vOf(t,oc);bub.v=v0+(want-v0)*Math.min(1,dt/(want>v0?.4:.8));bub.at=now;return null}
+bub.v=v0+(want-v0)*Math.min(1,dt/(want>v0?.4:.8));bub.at=now;return null}
 // room compass (Nessari v1.47-v1.60): when the car turns, everything above the floor slides sideways across the
 // picture. Each look's room row (how much edge each column has, 8% to 44% down, laid out by angle through the lens)
 // is matched against a kept one, so small errors don't pile up. Left and right halves are matched on their own:
@@ -266,7 +271,7 @@ function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150);if(ast.dir)autoTrim();ast.dir=ast.stuckDir=0;holdOff();bub.until=0}}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150);if(ast.dir)autoTrim();ast.dir=ast.stuckDir=0;holdOff();bub.until=bub.block=0}}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';

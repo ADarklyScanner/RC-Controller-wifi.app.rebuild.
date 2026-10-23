@@ -311,12 +311,9 @@ class MainActivity : Activity() {
             val latch = CountDownLatch(1)
             var bmp: Bitmap? = null
             runOnUiThread {
-                try {
-                    val keep = tex.getTransform(null)
-                    tex.setTransform(Matrix())
-                    bmp = tex.getBitmap(W, H)
-                    tex.setTransform(keep)
-                } catch (_: Exception) {}
+                // (getBitmap reads the picture itself, not the zoom / fit on screen, so the view's transform is left
+                //  alone: switching it off and back 8 to 16 times a second made the screen jump between fit and fill)
+                try { bmp = tex.getBitmap(W, H) } catch (_: Exception) {}
                 latch.countDown()
             }
             latch.await(300, TimeUnit.MILLISECONDS)
@@ -341,10 +338,7 @@ class MainActivity : Activity() {
                 try {
                     val b = grabBmp?.takeIf { it.width == W && it.height == H }
                         ?: Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888).also { grabBmp?.recycle(); grabBmp = it }
-                    val keep = tex.getTransform(null)
-                    tex.setTransform(Matrix())
                     tex.getBitmap(b)
-                    tex.setTransform(keep)
                     if (grabPx.size != W * H) grabPx = IntArray(W * H)
                     b.getPixels(grabPx, 0, W, 0, 0, W, H)
                     if (flip) grabPx.reverse()
