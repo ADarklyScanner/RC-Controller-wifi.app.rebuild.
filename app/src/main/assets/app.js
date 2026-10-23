@@ -4,17 +4,20 @@
 // a floor ruler over the picture, kick start, and driving helpers: stuck stop, corner limit, side nudge, speed
 // bubble, straight hold and auto trim (all from Nessari's drive screen, Oct 22).
 (()=>{
-const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20,ruler:1,kick:1,stuck:1,corner:0,nudge:0,bubble:1,hold:0,autotrim:1,v:2};
+const AD={tap:1,win:20,rev:.5,soft:1,dlow:.2,dfull:.7,dmax:1,dgain:1.4,dsnap:150,dflick:1,urate:20,crate:20,ruler:1,kick:1,stuck:1,corner:0,nudge:0,bubble:1,hold:0,autotrim:1,tapgo:1,v:2};
 let A={...AD};try{const was=JSON.parse(localStorage.carapp||'{}');
  // (v 2, Oct 22, as Nessari v1.70: corner limit and side nudge start off, once, on a phone that remembered them on)
  if(was.v!==2)for(const k of ['corner','nudge','v'])delete was[k];Object.assign(A,was)}catch(e){}
 A.drift=0;   // drift mode is off every time the app opens
 const aSave=()=>{try{const k={...A};delete k.drift;localStorage.carapp=JSON.stringify(k)}catch(e){}};
 const clamp=v=>Math.max(-1,Math.min(1,v));
+// shared with modes.js (loaded only when a mode is first used): busy while a mode drives the car; floor / seek ask
+// the look loop for the floor check or a small colour picture
+const X=window.CarX={busy:0,floor:0,seek:null,cancel:null};
 
 // ---------- looks ----------
 const st=document.createElement('style');
-st.textContent='body.tapany .slot{pointer-events:none}body.tapany #thr{left:8px}body.tapany #str{right:8px}body.tapany #joy.L{left:8px}body.tapany #joy.R{right:8px}'+
+st.textContent='#modesb{font:700 13px var(--display);color:var(--text)}body.tapany .slot{pointer-events:none}body.tapany #thr{left:8px}body.tapany #str{right:8px}body.tapany #joy.L{left:8px}body.tapany #joy.R{right:8px}'+
  '.tring{position:fixed;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:2px solid var(--acc);background:rgba(191,64,191,.15);pointer-events:none;z-index:5}'+
  '#drift{font:700 13px var(--display);color:var(--text)}#drift.on{color:var(--acc-ink)}';
 document.head.appendChild(st);
@@ -39,7 +42,7 @@ J.onpointerup=J.onpointercancel=()=>{jDown=false;touch.t=touch.s=null};
 // Two thumbs: left half is throttle (up / down), right half is steering (left / right). The distance for full
 // is half the length of the slider on screen, so the Size setting still sets it.
 // Stick L / Stick R: anywhere on that half is the stick, as big as the stick on screen.
-const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#tmode,#off,#tpill';
+const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#tmode,#off,#tpill,#mpanel,#mpill';
 const ptrs=new Map();
 document.addEventListener('pointerdown',e=>{if(!A.tap||e.target.closest(EXCL))return;
  const left=e.clientX<innerWidth/2;let role=null;
@@ -76,7 +79,7 @@ const STILL=2.5,CORNER=.75;
 const cam={motion:99,left:0,right:0,at:0,prev:null,detail:99,detailAvg:null};
 const ast={dir:0,since:0,stuckSince:0,stuckDir:0,veer:0};
 let lastDrive=0;
-setInterval(()=>{if(!window.CarApp||Date.now()-lastDrive>600){cam.prev=null;return}
+setInterval(()=>{if(!window.CarApp||(Date.now()-lastDrive>600&&!X.busy)){cam.prev=null;return}
  let b='';try{b=CarApp.look(32,18)}catch(e){}
  if(!b){cam.prev=null;return}
  const r=atob(b),g=new Uint8Array(r.length);for(let i=0;i<r.length;i++)g[i]=r.charCodeAt(i);
@@ -194,8 +197,8 @@ function roomRow(d){const w=YW,n=YR1-YR0,q=new Float32Array(w);
  for(let x=0;x<w;x++){q[x]-=m;v+=q[x]*q[x]}
  v=Math.sqrt(v/w);if(v<1e-6||m<n*1.5)return null;   // (a blank wall or the dark: nothing to go by)
  for(let x=0;x<w;x++)q[x]/=v;return q}
-function roomShift(a,b,guess,span,x0,x1){const w=a.length,sc=new Map();let best=-2,bs=0;
- for(let s0=Math.round(guess)-span;s0<=Math.round(guess)+span;s0++){const lo=Math.max(x0,-s0),hi=Math.min(x1,w-s0);if(hi-lo<(x1-x0)*.5)continue;
+function roomShift(a,b,guess,span,x0,x1,mo=.5){const w=a.length,sc=new Map();let best=-2,bs=0;
+ for(let s0=Math.round(guess)-span;s0<=Math.round(guess)+span;s0++){const lo=Math.max(x0,-s0),hi=Math.min(x1,w-s0);if(hi-lo<(x1-x0)*mo)continue;
   let c=0,aa=0,bb=0;for(let x=lo;x<hi;x++){const u=a[x+s0],v=b[x];c+=u*v;aa+=u*u;bb+=v*v}
   const r=c/Math.sqrt(aa*bb+1e-9);sc.set(s0,r);if(r>best){best=r;bs=s0}}
  const l=sc.get(bs-1),r=sc.get(bs+1);let sub=0;
@@ -206,7 +209,7 @@ function roomTurn(a,b,guess,span){const w=b.length,L=roomShift(a,b,guess,span,0,
  return{px:(L.px+R.px)/2,score,ok:score>=.5&&Math.min(L.clear,R.clear)>=.06&&!spread}}
 const yaw={on:0,deg:0,ref:null,refDeg:0,shift:0,v:0,score:0,at:0,good:0,bad:0};
 let rollingAt=0;
-function yawStep(row,now){const k=pxdeg();yaw.at=now;
+function yawStep(row,now){const k=pxdeg();yaw.at=now;if(row){yaw.last=row;yaw.lastAt=now}
  if(now-rollingAt>600)yaw.v=0;   // (a look it can't read carries the turn on only while the wheels turn)
  if(!row){yaw.score=0;if(yaw.ref){yaw.shift+=yaw.v;yaw.deg=yaw.refDeg+yaw.shift/k;yaw.bad++}return}
  if(!yaw.ref){yaw.ref=row;yaw.refDeg=yaw.deg;yaw.shift=0;yaw.v=0;yaw.score=1;return}
@@ -240,12 +243,13 @@ function hold(t,s,dir,now){
  else holdOff();
  return s}
 // the bigger look, in the same 8-a-second beat as the small one, only while driving and only what's switched on
-function bigLook(now){const needFloor=A.bubble&&!A.drift&&!orbit&&now-fwdAt<1500,needRoom=hst.holding;
- if(!needFloor&&!needRoom)return;
+function bigLook(now){const needFloor=(A.bubble&&!A.drift&&!orbit&&now-fwdAt<1500)||X.floor,needRoom=hst.holding||yaw.on>0,needSeek=!!X.seek;
+ if(!needFloor&&!needRoom&&!needSeek)return;
  let ok=false;try{ok=CarApp.grab(YW,YH)}catch(e){}
  if(!ok)return;
  if(needRoom){let b='';try{b=CarApp.rows(YR0,YR1,1,false)}catch(e){}if(b){const d=unb64(b,'room');if(d.length===YW*(YR1-YR0))yawStep(roomRow(d),now)}}
- if(needFloor){let b='';try{b=CarApp.rows(FY0*2,YH,2,true)}catch(e){}if(b){const d=unb64(b,'floor');if(d.length===FL.w*(FL.h-FY0)*3)floorFrame(d,now)}}}
+ if(needFloor){let b='';try{b=CarApp.rows(FY0*2,YH,2,true)}catch(e){}if(b){const d=unb64(b,'floor');if(d.length===FL.w*(FL.h-FY0)*3)floorFrame(d,now)}}
+ if(needSeek){let b='';try{b=CarApp.rows(0,YH,4,true)}catch(e){}if(b){const d=unb64(b,'seek');if(d.length===80*45*3)try{X.seek(d,80,45,now)}catch(e){}}}}
 let fwdAt=0;
 
 function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s=+q.get('s')||0;const oc=q.get('oc')==='1',now=Date.now();
@@ -271,12 +275,26 @@ function shape(u){const q=new URLSearchParams(u.slice(7));let t=+q.get('t')||0,s
  if(t<0){if(!revAt)revAt=now;let k=A.rev;if(A.soft)k*=Math.min(1,.35+.65*(now-revAt)/1200);t*=k}else revAt=0;
  q.set('t',t.toFixed(2));q.set('s',s.toFixed(2));return '/drive?'+q.toString()}
 const f0=window.fetch.bind(window);
-window.fetch=(u,o)=>{if(typeof u==='string'){if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150);if(ast.dir)autoTrim();ast.dir=ast.stuckDir=0;holdOff();bub.until=bub.block=0}}return f0(u,o)};
+window.fetch=(u,o)=>{if(typeof u==='string'){if(X.busy&&X.cancel&&(u.indexOf('/drive?')===0||u.indexOf('/stop')===0))X.cancel();   // (any stick, tap or Stop takes over from a mode)
+ if(u.indexOf('/drive?')===0){u=shape(u);drives++}else if(u.indexOf('/stop')===0){revAt=prevS=snapUntil=flickUntil=flicked=kickUntil=0;rollUntil=Math.min(rollUntil,Date.now()+150);if(ast.dir)autoTrim();ast.dir=ast.stuckDir=0;holdOff();bub.until=bub.block=0}}return f0(u,o)};
 
 // ---------- drift button (beside photo and record) ----------
 const db=document.createElement('button');db.className='ib';db.id='drift';db.title='Drift mode';db.textContent='D';
 $('#side').insertBefore(db,$('#side').firstChild);
 db.onclick=()=>{A.drift=A.drift?0:1;db.classList.toggle('on',!!A.drift);toast(A.drift?'Drift mode on':'Drift mode off')};
+// ---------- modes (modes.js, loaded the first time one is used, so it costs nothing until then) ----------
+let mp=null;
+function modes(f){if(!mp)mp=new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='/modes.js';sc.onload=()=>window.CarModes?ok(window.CarModes):no();sc.onerror=no;document.body.appendChild(sc)});
+ mp.then(f).catch(()=>{mp=null;toast('Modes could not load')})}
+const mb=document.createElement('button');mb.className='ib';mb.id='modesb';mb.title='Modes';mb.textContent='M';
+$('#side').insertBefore(mb,db.nextSibling);mb.onclick=()=>modes(m=>m.open());
+// tap to go: two quick taps on the floor in the picture and it drives there
+let lastTap=null;const downAt=new Map();
+document.addEventListener('pointerdown',e=>downAt.set(e.pointerId,{at:Date.now(),x:e.clientX,y:e.clientY}),true);
+document.addEventListener('pointerup',e=>{const d=downAt.get(e.pointerId);downAt.delete(e.pointerId);
+ if(!A.tapgo||!d||Date.now()-d.at>300||Math.hypot(e.clientX-d.x,e.clientY-d.y)>15||e.target.closest(EXCL+',#mpanel,#mpill'))return;
+ const now=Date.now();if(lastTap&&now-lastTap.at<400&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<40){lastTap=null;const x=e.clientX,y=e.clientY;modes(m=>m.tapGo(x,y))}
+ else lastTap={at:now,x:e.clientX,y:e.clientY}},true);
 
 // ---------- settings: each group folds open on its own (one at a time) ----------
 st.textContent+='details.dd{border-bottom:1px solid var(--line)}details.dd>summary{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:13px 0;color:var(--text);font:700 14px var(--display);letter-spacing:.02em;cursor:pointer}'+
@@ -298,6 +316,7 @@ const row=(label,inner)=>'<div class=row><label>'+label+'</label>'+inner+'</div>
 const info=t=>'<p class=info>'+t+'</p>';
 groups['Controls'].insertAdjacentHTML('beforeend',row('Tap anywhere',seg('a_tap'))+
  info('Press anywhere that is not a button and that spot becomes the centre. Two thumbs: left half throttle, right half steering. Stick: anywhere on the stick’s half. Moving half a slider’s length is full.')+
+ row('Tap to go',seg('a_tapgo'))+info('Two quick taps on the floor in the picture and the car drives there (8 cm to 3 m). Any stick, tap or Stop takes over.')+
  row('Stick straight zone',rng('a_win',5,45,1))+info('One-thumb stick: no steering inside this angle either side of straight, then it builds gently to full lock at 90°.'));
 groups['Driving'].insertAdjacentHTML('beforeend',row('Reverse speed',rng('a_rev',.25,1,.05))+row('Gentle reverse start',seg('a_soft'))+
  info('100% and Off is the old reverse. Gentle start begins slow and builds up over about a second.'));
@@ -409,7 +428,7 @@ setInterval(()=>{const now=Date.now();
 // ---------- settings rows ----------
 A.tslot=A.tslot||1;A.tthr=A.tthr||.2;
 const fmtA={win:v=>Math.round(v)+'°',rev:v=>Math.round(v*100)+'%',dlow:v=>Math.round(v*100)+'%',dfull:v=>Math.round(v*100)+'% push',dmax:v=>Math.round(v*100)+'%',dsnap:v=>v?Math.round(v)+' ms':'Off',dgain:v=>(+v).toFixed(1)+'×',tthr:v=>Math.round(v*100)+'%'};
-const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot','ruler','kick','stuck','corner','nudge','bubble','hold','autotrim'];
+const RN=['win','rev','dlow','dfull','dmax','dgain','dsnap','tthr'],SG=['tap','soft','dflick','urate','crate','tslot','ruler','kick','stuck','corner','nudge','bubble','hold','autotrim','tapgo'];
 const sendRate=()=>f0('/rate?ms='+Math.round(1000/A.crate)).catch(()=>{});
 function aApply(){document.body.classList.toggle('tapany',!!A.tap);drawRuler();db.classList.toggle('on',!!A.drift);
  for(const k of RN){const i=$('#a_'+k);i.value=A[k];i.nextElementSibling.textContent=fmtA[k](A[k])}
@@ -420,5 +439,6 @@ const r0=$('#reset').onclick;$('#reset').onclick=()=>{r0();A={...AD,drift:A.drif
 aApply();sendRate();
 // the shared screen updates the car 10 times a second; extra updates in between bring it to Screen updates (default 20)
 let mine=false;const rp0=readPad;
+Object.assign(X,{A,cam,flo,yaw,LENS,FL,STILL,f0,toast,buzz,clearAhead,wallAhead,vOf,handStop,roomRow,roomShift,pxdeg,yawStart,yawStop,unb64,YW,YH,YR0,YR1});
 readPad=function(){if(!mine){const n=Math.max(1,Math.round(A.urate/10));for(let k=1;k<n;k++)setTimeout(()=>{mine=true;try{tick()}finally{mine=false}},k*100/n)}return rp0()};
 })();
