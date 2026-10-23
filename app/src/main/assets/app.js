@@ -42,7 +42,7 @@ J.onpointerup=J.onpointercancel=()=>{jDown=false;touch.t=touch.s=null};
 // Two thumbs: left half is throttle (up / down), right half is steering (left / right). The distance for full
 // is half the length of the slider on screen, so the Size setting still sets it.
 // Stick L / Stick R: anywhere on that half is the stick, as big as the stick on screen.
-const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#tmode,#off,#tpill,#mpanel,#mpill';
+const EXCL='button,input,.ib,#gears,#side,#sheet,#scrim,#gal,#viewer,#padt,#tmode,#off,#tpill,#mpanel,#mpill,#guide';
 const ptrs=new Map();
 document.addEventListener('pointerdown',e=>{if(!A.tap||e.target.closest(EXCL))return;
  const left=e.clientX<innerWidth/2;let role=null;
@@ -299,8 +299,9 @@ document.addEventListener('pointerup',e=>{const d=downAt.get(e.pointerId);downAt
 // ---------- settings: each group folds open on its own (one at a time) ----------
 st.textContent+='details.dd{border-bottom:1px solid var(--line)}details.dd>summary{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:13px 0;color:var(--text);font:700 14px var(--display);letter-spacing:.02em;cursor:pointer}'+
  'details.dd>summary::-webkit-details-marker{display:none}details.dd>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);transform:rotate(45deg);margin-right:4px;transition:transform .2s}'+
- 'details.dd[open]>summary::after{transform:rotate(-135deg)}.ddb{padding:0 0 10px}#tmb{width:100%;justify-content:center;margin:14px 0 8px}'+
+ 'details.dd[open]>summary::after{transform:rotate(-135deg)}.ddb{padding:0 0 10px}#tmb,#gdb{width:100%;justify-content:center;margin:14px 0 8px}#gdb{margin-top:0}'+
  '#tmode{position:fixed;inset:0;background:var(--bg);z-index:8;display:none;flex-direction:column;touch-action:pan-y}#tmode.on{display:flex}#tmbody{overflow-y:auto;padding:0 16px 24px;width:100%;max-width:640px;margin:0 auto}'+
+ '.tmlike{position:fixed;inset:0;background:var(--bg);z-index:8;display:none;flex-direction:column;touch-action:pan-y}.tmlike.on{display:flex}.tmb2{overflow-y:auto;padding:0 16px 24px;width:100%;max-width:640px;margin:0 auto}.tmb2 h3{margin:16px 0 8px;font-size:14px;color:var(--text);font-family:var(--display)}'+
  '#tmbody h3{margin:16px 0 8px;font-size:14px;color:var(--text);font-family:var(--display)}.go{width:100%;justify-content:center;margin:6px 0}.go.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}'+
  '.meter{display:flex;justify-content:space-between;padding:5px 0;color:var(--text);font-size:13px}.meter b{font:700 14px var(--display);font-variant-numeric:tabular-nums;color:var(--acc)}';
 const sh=$('#sheet'),groups={};let body=null;
@@ -366,7 +367,7 @@ const ap0=apply;apply=function(){ap0();drawRuler()};addEventListener('resize',dr
 // the old Tests group moves to Test mode
 const oldTests=groups['Tests'];
 // inside a .tests box so the controller's D-pad reaches it (the shared screen's list takes '#sheet .tests button')
-$('#reset').insertAdjacentHTML('beforebegin','<div class=tests style="display:block"><button class=pill id=tmb>Test mode</button></div>');
+$('#reset').insertAdjacentHTML('beforebegin','<div class=tests style="display:block"><button class=pill id=tmb>Test mode</button><button class=pill id=gdb>Car guide</button></div>');
 document.querySelectorAll('#sheet details.dd').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)document.querySelectorAll('#sheet details.dd').forEach(o=>{if(o!==d)o.open=false})}));
 // controller navigation (D-pad) walks the rows; the group holding the picked row opens
 const fs0=fShow;fShow=function(){fs0();const el=document.querySelector('#sheet .gpf'),d=el&&el.closest('details');if(d&&!d.open){d.open=true;el.scrollIntoView({block:'nearest'})}};
@@ -394,7 +395,34 @@ document.body.insertAdjacentHTML('beforeend','<div id=tmode><div class=bar><h2>T
  '</div></div>');
 while(oldTests.firstChild)$('#tmold').appendChild(oldTests.firstChild);oldTests.closest('details').remove();
 const tm=on=>{$('#tmode').classList.toggle('on',on);if(on){sheet(false);touch.t=touch.s=null;fetch('/stop').catch(()=>{})}};
-$('#tmb').onclick=()=>tm(true);$('#tmx').onclick=()=>tm(false);$('#tmstop').onclick=()=>$('#stop').onclick();
+$('#tmb').onclick=()=>tm(true);
+// ---------- car guide: the paper sheet that came with the car, corrected by what was measured (built when opened) ----------
+function guide(){let g=$('#guide');if(!g){
+ const li=a=>'<ul style="margin:0 0 6px;padding-left:18px;color:var(--text);font-size:13px;line-height:1.5">'+a.map(t=>'<li>'+t+'</li>').join('')+'</ul>',h=t=>'<h3>'+t+'</h3>';
+ document.body.insertAdjacentHTML('beforeend','<div id=guide class=tmlike><div class=bar><h2>Car guide</h2><button class=ib id=gdx title=Close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class=tmb2>'+
+  h('Switching on and connecting')+li(['Slide the switch under the car to ON. The camera’s green light flashes when it’s ready.',
+   'On the phone, join the Wi-Fi called <b>WL_FPV_CAR_</b> and 8 digits. It’s open: no password, whatever the sheet says.',
+   'Open this app. It finds the car by itself and the picture comes up. Mobile data can stay on.',
+   'Only one program can have the car at a time (this app, the Chrome page or Nessari). Whichever is open gets it.'])+
+  h('Battery and charging')+li(['3.7 V 180 mAh. Expect about <b>5 minutes</b> of hard driving (the sheet says 25). The timer at the top turns gold at 4:00.',
+   'When it’s low the car drops from full speed to a crawl and shuts off within seconds, with no slow fade. Park it and charge.',
+   'Switch the car OFF first, then plug USB-C into the bottom. A red light means charging, green means full, in under 30 minutes.'])+
+  h('Driving')+li(['Speeds 1, 2 and 3, plus MAX when it’s unlocked in Settings. At speed 2 flat out it goes about 55 cm a second.',
+   'It reverses faster than it goes forward (Reverse speed in Settings > Driving sets how much is used).',
+   'Below about 30% throttle it won’t start rolling by itself; Kick start gives it a push.',
+   'Tightest circle at full lock is about 88 cm across.',
+   'Headlights are always on; the tail lights come on when reversing. The app has no light switch, the car does it.'])+
+  h('Camera')+li(['720p (1280 × 720) at about 25 pictures a second, H.264. It sees about 117° across, about 4 cm off the floor.',
+   'Photos are saved as 1280 × 720 JPEG and videos as 720p MP4, in the phone’s Gallery (the Share button opens them).',
+   'The floor ruler’s lines are measured on this car’s lens and are right while it sits flat.'])+
+  h('Buttons')+li(['<b>D</b>: drift mode. <b>M</b>: modes (tap to go, come back, race, follow, explore, set-up tests).',
+   'Photo, record, circle left and right, Stop. Settings holds the helpers, the ruler and Test mode.',
+   'Any Bluetooth controller works: R2 forward, L2 back, left stick steers (full list in the app’s README).'])+
+  h('Care')+li(['Works from −10 to 70 °C. Keep it out of water, and don’t leave it charging unattended.'])+
+  '</div></div>');
+ g=$('#guide');$('#gdx').onclick=()=>g.classList.remove('on')}
+ sheet(false);g.classList.add('on')}
+$('#gdb').onclick=guide;$('#tmx').onclick=()=>tm(false);$('#tmstop').onclick=()=>$('#stop').onclick();
 $('#t_pad').onclick=()=>{tm(false);$('#ptb').onclick()};
 // starting a test closes the panel so the car, the camera and the value at the top can be watched
 document.querySelectorAll('#tmold .tests button,#mhold').forEach(b=>b.addEventListener('click',()=>tm(false)));

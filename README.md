@@ -67,6 +67,8 @@ in the Termux version or the Chrome page (Settings > App):
     the floor, and working itself free when it gets stuck.
   - **Set-up tests**, kept on the phone: the **turning test** (a stepped circle that sets the compass scale and how
     far each steering pulse turns) and the **speed test** on floor tiles (cm a second at 50, 70 and 100%).
+- **Car guide** (Settings, under Test mode): the paper sheet that came with the car, corrected by what was measured:
+  connecting (open Wi-Fi, no password), battery and charging, speeds, camera, buttons and care.
 - **Drift mode** (D button): throttle is light or full (full power can be lowered for slick tyres), nothing between;
   steering is stronger and not reduced at speed. Steering snap: a quick turn goes to full lock for a moment.
   Flick: reaching full lock at full throttle cuts power for one message (0.1 s), once per turn.
