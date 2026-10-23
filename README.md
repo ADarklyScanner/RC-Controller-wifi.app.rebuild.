@@ -44,9 +44,9 @@ in the Termux version or the Chrome page (Settings > App):
 - **Helpers** (Settings > Helpers, each with its own switch; from Nessari's drive screen): **stuck stop** (pushing
   throttle but the picture hasn't moved for a second: it stops pushing that way until you let go or go the other way),
   **corner limit** (full turn going forward eases off to 75%), **side nudge** (going straight, steers a little away from
-  something close sweeping past one side), **speed bubble** (never slows you; brakes with a short burst of reverse
+  something close sweeping past one side, but not when something fills both sides), **speed bubble** (never slows you; brakes with a short burst of reverse
   only when something it's sure of on the floor, or a wall, is closer than the car can stop from its speed, and won't
-  go forward with the nose 2 cm from it), **straight hold** (with the steering at straight, the room above the floor
+  go forward with the nose 2 cm from it; after a brake, forward waits until you let go, back up, or it's clear), **straight hold** (with the steering at straight, the room above the floor
   acts as a compass and it keeps your heading when a tile edge knocks the car crooked) and **auto trim** (with straight
   hold on, a drive where it kept steering one way moves the car's trim 2 steps that way). They read a tiny grey copy
   of the picture (32 x 18) from the app 8 times a second, only while you drive; the speed bubble and straight hold
