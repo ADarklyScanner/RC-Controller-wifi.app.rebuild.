@@ -52,6 +52,21 @@ in the Termux version or the Chrome page (Settings > App):
   of the picture (32 x 18) from the app 8 times a second, only while you drive; the speed bubble and straight hold
   also read a bigger one (320 x 180) while they're working. Corner limit, side nudge and straight hold start off, as
   in Nessari.
+- **Modes** (M button; `modes.js`, loaded only the first time a mode is used; from Nessari's drive screen, without
+  her brain or voice; modes drive at speed 2, and any stick, tap or Stop takes over):
+  - **Tap to go**: tap the floor twice in the picture and it drives there (8 cm to 3 m), turning parked by the room
+    compass and driving in legs of up to 50 cm with straight hold, the speed bubble and stuck stop. Switch in
+    Settings > Controls.
+  - **Come back** (to where it started, facing the way it first did), **Turn around**, **Start here**.
+  - **Race mode**: a strip of tape across the track is the start line; it times your laps and keeps best times.
+    **Car's laps**: it drives 3 laps between two lines of tape, 5% faster after a clean lap, 10% slower after one
+    where it lost the lines.
+  - **Follow**: a laser dot (red, green or blue), a tape line, between two lines, a wall on the left or right, the
+    brightest or darkest part of the room.
+  - **Explore**: it drives itself for a minute, veering from things close by, turning before walls and things on
+    the floor, and working itself free when it gets stuck.
+  - **Set-up tests**, kept on the phone: the **turning test** (a stepped circle that sets the compass scale and how
+    far each steering pulse turns) and the **speed test** on floor tiles (cm a second at 50, 70 and 100%).
 - **Drift mode** (D button): throttle is light or full (full power can be lowered for slick tyres), nothing between;
   steering is stronger and not reduced at speed. Steering snap: a quick turn goes to full lock for a moment.
   Flick: reaching full lock at full throttle cuts power for one message (0.1 s), once per turn.
